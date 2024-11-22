@@ -1,0 +1,103 @@
+/* CSS for masterplan */
+
+#content {
+    margin-top: 30px;
+}
+
+.message {
+    font-size: 60px;
+    font-weight: bold;
+    margin-top: 50px;
+}
+
+.timeline {
+    height: 30px;
+    vertical-align: middle;
+
+    border-style: solid;
+    border-width: 3px;
+    margin-top: 5px;
+}
+
+.timeline-left {
+    display: inline-block;
+    position: fixed;
+    margin-top: -3px;
+    margin-left: -15px;
+}
+
+.timeline-right {
+    display: inline-block;
+    position: fixed;
+    margin-right: -20px;
+    margin-top: -3px;
+}
+
+.markers {
+    padding-top: 5px;
+    background-color: #ffffff;
+}
+
+.marker {
+    color: #4d4d4d;
+    display: inline-block;
+    font-weight: bold;
+}
+
+.parent {
+    color: #666666;
+    background-color: #f6f6f6;
+}
+
+.parent-timeline-text {
+    display: inline-block;
+/*    visibility: hidden; */
+    width: calc(100% - 8px);
+    vertical-align: middle;
+
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+}
+
+.main {
+    width:90%;
+/*    left: 0;
+    right: 0; needed for browser compat? */
+    margin: auto;
+
+    color: #666666;
+    background-color: #e6e6e6;
+    border-color: #666666;
+}
+
+.main-timeline-text {
+    display: inline-block;
+    width: calc(100% - 22px);
+    vertical-align: middle;
+
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+}
+
+.child {
+    width: 20%;
+    margin-top: 15px;
+    margin-left: 60%;
+
+    color: #333333;
+    background-color: #b3b3b3;
+    border-color: #333333;
+}
+
+.child-timeline-text {
+    display: inline-block;
+/*    visibility: hidden; */
+    width: calc(100% - 8px);
+    vertical-align: middle;
+
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+}

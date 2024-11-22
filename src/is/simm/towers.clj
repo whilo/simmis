@@ -4,6 +4,7 @@
             [is.simm.runtimes.report :refer [report]]
             [is.simm.runtimes.etaoin :refer [etaoin]]
             [is.simm.runtimes.notes :refer [notes]]
+            [is.simm.runtimes.users :refer [users]]
             [is.simm.runtimes.rustdesk :refer [rustdesk]]
             [is.simm.runtimes.telegram :refer [telegram long-polling]]
             [is.simm.runtimes.text-extractor :refer [text-extractor]]
@@ -20,7 +21,7 @@
   [S peer [in out]])
 
 (defn default []
-  (comp drain brave etaoin openai notes assistance text-extractor rustdesk telegram codrain))
+  (comp drain brave etaoin openai notes assistance text-extractor rustdesk #_users telegram codrain))
 
 (defn debug [] 
   (comp drain 
@@ -38,7 +39,9 @@
         text-extractor
         (partial report #(println "text-extractor: " (:type %) (:request-id %)))
         rustdesk
-        (partial report #(println "rustdesk: " (:type %) (:request-id %)))
+        (partial report #(println "users: " (:type %) (:request-id %)))
+        #_users
+        #_(partial report #(println "rustdesk: " (:type %) (:request-id %)))
         telegram
         (partial report #(println "telegram: " (:type %) (:request-id %)))
         codrain))
@@ -60,6 +63,8 @@
          (partial report #(println "text-extractor: " (:type %) (:request-id %)))
          rustdesk
          (partial report #(println "rustdesk: " (:type %) (:request-id %)))
+         #_(partial report #(println "users: " (:type %) (:request-id %)))
+         #_users
          (partial telegram long-polling)
          (partial report #(println "telegram: " (:type %) (:request-id %)))
          codrain))

@@ -1,6 +1,11 @@
 {:paths ["src" "resources"]
- :deps {org.clojure/clojure {:mvn/version "1.11.1"}
-        io.replikativ/datahike {:mvn/version "0.6.1592"}
+ :deps {com.hyperfiddle/electric       {:git/url "https://github.com/hyperfiddle/electric" :git/sha "b32ac98df7d7ec87f225d47354671be172ffa87e"}
+        ring/ring                      {:mvn/version "1.11.0"} ; comes with Jetty
+        org.clojure/tools.logging      {:mvn/version "1.2.4"}
+        ch.qos.logback/logback-classic {:mvn/version "1.4.14"}
+
+        org.clojure/clojure {:mvn/version "1.11.1"}
+        io.replikativ/datahike {:mvn/version "0.6.1594"}
         clj-python/libpython-clj {:mvn/version "2.025"}
         morse/morse {:mvn/version "0.4.3"}
         io.replikativ/kabel {:mvn/version "0.2.2"}
@@ -15,21 +20,35 @@
         remus/remus {:mvn/version "0.2.4"}
         nrepl/nrepl {:mvn/version "1.1.1"}
         cider/cider-nrepl {:mvn/version "0.47.1"}
+        io.replikativ/datahike-dynamodb {:mvn/version "0.1.8"}
+        io.replikativ/datahike-s3 {:mvn/version "0.1.13"}
 
         ;; exploratory
-        missionary/missionary {:mvn/version "b.34"}
+        missionary/missionary {:mvn/version "b.41"}
         io.github.jbellis/jvector {:mvn/version "3.0.2"}
         pangloss/pattern {:git/url "https://github.com/pangloss/pattern"
                           :sha #_"affc7f3ac907f5b98de6638574a741e4693f1648"
                           "93fb43e3223bbcfe08c4e37414709021d8a99604"}
-        anglican/anglican {:mvn/version "1.1.0"}}
- :jvm-opts ["-Xmx1g" "--add-modules jdk.incubator.vector"]
+        anglican/anglican {:mvn/version "1.1.0"}
+
+        reagent/reagent {:mvn/version "1.1.1"}}
  :aliases
- {:run {:main-opts ["-m" "is.simm.simmis" "--middleware" "[cider.nrepl/cider-middleware]"]}
+ {:dev {;:main-opts ["-m" "is.simm.simmis" "--middleware" "[cider.nrepl/cider-middleware]"]
+        ;:jvm-opts ["--add-modules jdk.incubator.vector"]
+        :extra-paths ["src-dev"]
+        :extra-deps  {thheller/shadow-cljs          {:mvn/version "2.26.2"}
+                      io.github.clojure/tools.build {:mvn/version "0.9.6"
+                                                     :exclusions  [com.google.guava/guava  ; Guava version conflict between tools.build and clojurescript.
+                                                                   org.slf4j/slf4j-nop]}}} ; clashes with app logger
+
   :build {:deps {io.github.clojure/tools.build
                  {:mvn/version "0.9.6"}}
-          :ns-default build}
+          :ns-default build
+          ;:jvm-opts ["--add-modules jdk.incubator.vector"]
+          }
   :test {:extra-paths ["test"]
          :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
                       io.github.cognitect-labs/test-runner
-                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}}}}
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         ;:jvm-opts ["--add-modules jdk.incubator.vector"]
+         }}}

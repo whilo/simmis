@@ -4,6 +4,7 @@
             [superv.async :refer [S go-try <? <?? on-abort] :as sasync]
             [is.simm.http :refer [ring-handler]]
             [ring.adapter.jetty :refer [run-jetty]]
+            [ring.middleware.session :refer [wrap-session]]
             [clojure.core.async :refer [chan close!]]
             [is.simm.towers :refer [default debug test-tower]]
             [nrepl.server :refer [start-server stop-server]]
@@ -26,7 +27,9 @@
     (def peer (atom {}))
     (sasync/restarting-supervisor (fn [S] (go-try S 
                                                   ((debug) [S peer chans])
-                                                  (let [ring (ring-handler (get-in @peer [:http :routes]))
+                                                  (let [ring (-> (get-in @peer [:http :routes])
+                                                                 ring-handler
+                                                                 wrap-session)
                                                         server (run-jetty ring {:port 8080 :join? false})]
                                                     (swap! peer assoc-in [:http :server] server)
                                                     (log/info "Server started.")
