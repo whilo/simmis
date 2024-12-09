@@ -1,6 +1,7 @@
 {:paths ["src" "resources"]
  :deps {com.hyperfiddle/electric       {:git/url "https://github.com/hyperfiddle/electric" :git/sha "b32ac98df7d7ec87f225d47354671be172ffa87e"}
         ring/ring                      {:mvn/version "1.11.0"} ; comes with Jetty
+        ring-basic-authentication/ring-basic-authentication {:mvn/version "1.2.0"}
         org.clojure/tools.logging      {:mvn/version "1.2.4"}
         ch.qos.logback/logback-classic {:mvn/version "1.4.14"}
 
@@ -23,13 +24,21 @@
         io.replikativ/datahike-dynamodb {:mvn/version "0.1.8"}
         io.replikativ/datahike-s3 {:mvn/version "0.1.13"}
 
+        com.stuartsierra/component {:mvn/version "1.1.0"}
+
         ;; exploratory
+        com.hyperfiddle/rcf {:mvn/version "20220926-202227"}
+        cloroutine/cloroutine {:local/root "/home/christian/Development/cloroutine"} #_{:mvn/version "13"}
         missionary/missionary {:mvn/version "b.41"}
         io.github.jbellis/jvector {:mvn/version "3.0.2"}
         pangloss/pattern {:git/url "https://github.com/pangloss/pattern"
                           :sha #_"affc7f3ac907f5b98de6638574a741e4693f1648"
                           "93fb43e3223bbcfe08c4e37414709021d8a99604"}
         anglican/anglican {:mvn/version "1.1.0"}
+        org.scicloj/clay {:mvn/version "2-beta24"}
+        ;; sci interpreter
+        org.babashka/sci {:local/root "/home/christian/Development/sci"}
+
 
         reagent/reagent {:mvn/version "1.1.1"}}
  :aliases

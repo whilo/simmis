@@ -5,6 +5,9 @@
    This runtime is a substrate, i.e. it does not emit lower level messages and does not interfere with outgoing messages."
   (:require [libpython-clj2.require :refer [require-python]]
             [libpython-clj2.python :refer [py. py.. py.-] :as py]
+            [com.stuartsierra.component :as component]
+            [is.simm.runtimes.branching :as branching]
+            [is.simm.languages.gen-ai :as gen-ai]
             [taoensso.timbre :refer [debug warn]]
             [is.simm.config :refer [config]]
             [clojure.core.async :refer [chan promise-chan pub sub put! <!] :as async]
@@ -203,3 +206,53 @@
                    (recur (<? S dall-e-3))))
 
     [S peer [next-in out]]))
+
+(defrecord OpenAIRuntime [state]
+  component/Lifecycle
+  (start [this] this)
+  (stop [this] this)
+  branching/Branching
+  (-branch [this id] (OpenAIRuntime. (atom (merge @(:state this) {:id id}))))
+  branching/Merging
+  (-merge [this other id] 
+    (when-not (= @(:state this) @(:state other))
+      (throw (ex-info "Merging incompatible runtimes." {:type :incompatible-runtimes
+                                                        :this @(:state this)
+                                                        :other @(:state other)})))
+    (OpenAIRuntime. (atom (merge @(:state this) {:id id})))))
+
+(defn openai-runtime [config]
+  (OpenAIRuntime. (atom (merge {:usage {:last-request-time 0
+                                        :num-requests 0}
+                                :credits {:usd-per-month 120}}
+                               config))))
+
+(extend-protocol gen-ai/GenAI
+  OpenAIRuntime
+  (-cheap-llm [this msg]
+    (let [{:keys [openai-key]} @(:state this)]
+      (swap! (:state this) #(-> %
+                                (assoc-in [:usage :last-request-time] (System/currentTimeMillis))
+                                (update-in [:usage :num-requests] inc)))
+      (text-chat "gpt-4o-mini" msg)))
+
+  (-reasoner-llm [this msg]
+    (let [{:keys [openai-key]} @(:state this)]
+      (swap! (:state this) #(-> %
+                                (assoc-in [:usage :last-request-time] (System/currentTimeMillis))
+                                (update-in [:usage :num-requests] inc)))
+      (text-chat "gpt-4o-2024-08-06" msg)))
+
+  (-stt-basic [this voice-path]
+    (let [{:keys [openai-key]} @(:state this)]
+      (swap! (:state this) #(-> %
+                                (assoc-in [:usage :last-request-time] (System/currentTimeMillis))
+                                (update-in [:usage :num-requests] inc)))
+      (try (stt "whisper-1" voice-path) (catch Exception e e))))
+
+  (-image-gen [this prompt]
+    (let [{:keys [openai-key]} @(:state this)]
+      (swap! (:state this) #(-> %
+                                (assoc-in [:usage :last-request-time] (System/currentTimeMillis))
+                                (update-in [:usage :num-requests] inc)))
+      (try (image-gen "dall-e-3" prompt) (catch Exception e e)))))

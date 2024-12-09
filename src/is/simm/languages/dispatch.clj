@@ -41,3 +41,6 @@
                            (close! reply)
                            response)
                          (recur (<? S reply)))))))))
+
+(defn get-runtime [ctx lang]
+  (get-in ctx [:runtimes (get-in ctx [:language->runtime lang])]))

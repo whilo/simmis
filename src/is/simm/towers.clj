@@ -4,7 +4,6 @@
             [is.simm.runtimes.report :refer [report]]
             [is.simm.runtimes.etaoin :refer [etaoin]]
             [is.simm.runtimes.notes :refer [notes]]
-            [is.simm.runtimes.users :refer [users]]
             [is.simm.runtimes.rustdesk :refer [rustdesk]]
             [is.simm.runtimes.telegram :refer [telegram long-polling]]
             [is.simm.runtimes.text-extractor :refer [text-extractor]]

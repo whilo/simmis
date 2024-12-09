@@ -57,6 +57,8 @@
 
   (close! in)
 
+  (-main)
+
   (require '[datahike.api :as d])
 
   (require '[is.simm.runtimes.assistance :refer [conversation extract-tags]])

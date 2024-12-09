@@ -1,6 +1,6 @@
 (ns dev
   (:require
-   is.simm.main
+   is.simm.views.main
    [hyperfiddle.electric :as e]
    #?(:clj [is.simm.server-jetty :as jetty])
    #?(:clj [shadow.cljs.devtools.api :as shadow])
@@ -18,7 +18,7 @@
         :manifest-path ; contains Electric compiled program's version so client and server stays in sync
         "public//electric_starter_app/js/manifest.edn"})
 
-     (defn -main [& args]
+     (defn -main [& _args]
        (log/info "Starting Electric compiler and server...")
 
        (shadow-server/start!)
@@ -27,7 +27,7 @@
 
        (def server (jetty/start-server!
                      (fn [ring-request]
-                       (e/boot-server {} is.simm.main/Main ring-request))
+                       (e/boot-server {} is.simm.views.main/Main ring-request))
                      config))
 
        (comment (.stop server))
@@ -35,7 +35,7 @@
 
 #?(:cljs ;; Client Entrypoint
    (do
-     (def electric-entrypoint (e/boot-client {} is.simm.main/Main nil))
+     (def electric-entrypoint (e/boot-client {} is.simm.views.main/Main nil))
 
      (defonce reactor nil)
 

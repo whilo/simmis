@@ -3,23 +3,42 @@
    
    Languages: screen
    It is a source runtime that does not discharge any additional outputs and does not handle other inputs."
-  (:require [is.simm.peer :as peer]
-            [is.simm.http :refer [response]]
-            [is.simm.website :refer [md-render default-chrome base-url]]
-            [is.simm.runtimes.openai :refer [text-chat chat]]
-            [is.simm.parse :refer [parse-json]]
-            [clojure.core.async :refer [timeout put! chan pub sub close! take! poll! go-loop go] :as async]
-            [superv.async :refer [go-try S <? <?? go-loop-try put? go-for]]
-            [taoensso.timbre :refer [debug]]
-            [missionary.core :as m]
-            [datahike.api :as d]
+  (:require  [sci.core :as sci]
+             [is.simm.runtime :as runtime]
+             [is.simm.peer :as peer]
+             [is.simm.http :refer [response]]
+             [is.simm.website :refer [md-render default-chrome base-url]]
+             [is.simm.runtimes.openai :refer [text-chat chat]]
+             [is.simm.parse :refer [parse-json]]
+             [clojure.core.async :refer [timeout put! chan pub sub close! take! poll! go-loop go] :as async]
+             [superv.async :refer [go-try S <? <?? go-loop-try put? go-for]]
+             [taoensso.timbre :refer [debug]]
+             [missionary.core :as m]
+             [datahike.api :as d]
 
-            [clojure.data :refer [diff]]
-            [clojure.java.io :as io]
-            [konserve.core :as k]
-            [konserve.filestore :as kf])
+             [clojure.data :refer [diff]]
+             [clojure.java.io :as io]
+             [konserve.core :as k]
+             [konserve.filestore :as kf])
   (:import [java.nio.file Files Paths]
            [java.util Base64]))
+
+(comment
+  (sci/init {})
+
+
+  )
+
+(defn add-screenshot! [foo])
+
+(defn screenshare-process [screen-id conn]
+  (let [init (sci/init {:namespaces {'is.simm.runtimes.openai {'text-chat text-chat}}})]
+
+    (assoc init :id screen-id)))
+
+(comment
+  (screenshare-process "123")
+  )
 
 
 (defn >! "Puts given value on given channel, returns a task completing with true when put is accepted, of false if port was closed."
@@ -100,7 +119,7 @@
         (swap! peer assoc-in [:conn screen-id] conn)
         conn)))
 
-(def transcripts (read-string (slurp "/home/ubuntu/simmis/transcriptions.edn")))
+(def transcripts (try (read-string (slurp "/home/ubuntu/simmis/transcriptions.edn")) (catch Exception _e {})))
 
 (def screenshot-prompt "You are a note taker for a screen transcription tool. Describe all the visual information as precisely as possible such that it can be retained even if the image is lost. Describe the screen hierarchically. If a browser is visible, write down the URL that is open. Write down *all* text you can see in the respective context. Summarize your observations in the end and try to infer what the user is doing on a high-level.")
 

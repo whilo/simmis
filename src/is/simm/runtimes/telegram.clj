@@ -18,6 +18,10 @@
             [clojure.java.io :as io]))
 
 
+(defn send-text! [chat-id text]
+  (t/send-text (:telegram-bot-token config) chat-id text))
+
+
 ;; TODO do not eagerly fetch the voice always, but only when needed from higher level language
 (defn fetch-voice! [{:keys [voice chat] :as msg}]
   (if-not voice msg
