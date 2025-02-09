@@ -1,6 +1,6 @@
 (ns is.simm.simulations.screenshare.view
-  (:require [hyperfiddle.electric :as e]
-            [hyperfiddle.electric-dom2 :as dom]
+  (:require [hyperfiddle.electric3 :as e]
+            [hyperfiddle.electric-dom3 :as dom]
             #?(:clj [is.simm.simulations.screenshare.screens :refer [screens-conn get-screens add-screen! remove-screen! set-active!
                                                                      !running-rustdesks list-recordings remove-recording! parse-date
                                                                      recordings-conn]])
@@ -43,11 +43,11 @@
                        ;; Input form for adding screen-id
                           (dom/div (dom/props {:class "mb-4"})
                                    (dom/input (dom/props {:class "border p-2 mr-4 text-gray-700"
+                                                          :placeholder "Enter RustDesk screen id"
                                                           :value @!screen-id}))
-                                   (dom/on "change" (e/fn [e]
-                                                      (.log js/console e) (reset! !screen-id (.. e -target -value))))
+                                   (dom/On-all "change" (e/fn [e] (.log js/console e) (reset! !screen-id (.. e -target -value))))
                                    (dom/button (dom/props {:class "bg-blue-500 text-white p-2 rounded"})
-                                               (dom/on "click" (e/fn [e]
+                                               (dom/On-all "click" (e/fn [e]
                                                                  (prn "click" e)
                                                                  (.log js/console e)
                                                                  (let [screen-id (e/client @!screen-id)]
@@ -71,19 +71,19 @@
                                                        (dom/button (dom/props (merge {:class (str "bg-gray-900 text-gray-700 p-2 rounded "
                                                                                                   (if (contains? running-screens screen)
                                                                                                     "text-red-500" "text-gray-700"))}))
-                                                                   (dom/on "click" (e/fn [e]
+                                                                   (dom/On-all "click" (e/fn [e]
                                                                                      (prn "screen" e)
                                                                                      (reset! !selected-screen screen)))
                                                                    (dom/text screen))
                                                     ;; Remove button
                                                        (dom/button (dom/props {:class "bg-red-500 text-white p-2 rounded"})
-                                                                   (dom/on "click" (e/fn [e]
+                                                                   (dom/On-all "click" (e/fn [e]
                                                                                      (prn "remove" e)
                                                                                      (e/server (remove-screen!  screen))))
                                                                    (dom/text "Remove"))
                                                     ;; Activate button
                                                        (dom/button (dom/props {:class "bg-green-500 text-white p-2 rounded"})
-                                                                   (dom/on "click" (e/fn [e]
+                                                                   (dom/On-all "click" (e/fn [e]
                                                                                      (prn "de/activate" e)
                                                                                      (e/server (set-active! screen (not active)))))
                                                                    (if active
@@ -103,12 +103,13 @@
                                                    recordings-db selected-screen)]
                                (e/client
                                 (when (seq recordings)
+                                  (dom/h4 (dom/props {:class "text-xl font-semibold text-gray-800"}) (dom/text "Recordings"))
                                   (dom/ul (dom/props {:class "list-disc pl-6 space-y-2 text-left"})
                                           (e/for [rec (seq recordings)]
                                             (dom/li (dom/props {})
                                                     (dom/text (e/server (parse-date rec)))
                                                     (dom/button (dom/props {:class "bg-red-500 text-white p-2 rounded"})
-                                                                (dom/on "click" (e/fn [e]
+                                                                (dom/On-all "click" (e/fn [e]
                                                                                   (prn "remove recording" e)
                                                                                   (e/server (remove-recording! rec))))
                                                                 (dom/text "Remove"))

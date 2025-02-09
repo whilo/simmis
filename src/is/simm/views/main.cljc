@@ -2,8 +2,8 @@
   (:require  [is.simm.views.tasks :refer [TaskManager]]
              [is.simm.simulations.screenshare.view :refer [ScreenShare]]
              #?(:clj [is.simm.users :refer [get-session add-session! update-session! delete-session! get-user]])
-             [hyperfiddle.electric :as e]
-             [hyperfiddle.electric-dom2 :as dom]
+             [hyperfiddle.electric3 :as e]
+             [hyperfiddle.electric-dom3 :as dom]
              #?(:clj [datahike.api :as d])
              [missionary.core :as m]))
 
@@ -15,25 +15,25 @@
 (e/defn Header [session-id]
   (e/client
    (let [user (e/server (get-user session-id))]
-     (dom/header (dom/props {:class "bg-gray-600 p-4"})
+     (dom/header (dom/props {:class "bg-gray-400 p-4"})
                  (dom/div (dom/props {:class "container mx-auto flex justify-between items-center"})
                           (dom/div (dom/props {:class "flex items-center"})
                                    (dom/a (dom/props {:class "text-white text-xl font-bold"})
-                                          (dom/on "click" (e/fn [_e] (reset! !view-state :main)))
+                                          (dom/On-all "click" (e/fn [_e] (reset! !view-state :main)))
                                           (dom/img (dom/props {:src "/simmis.png" :alt "Logo" :class "h-10" :style {:transform (str "rotate(" @!rotation "deg)")}})))
                                    (dom/text "immis"))
                           (dom/nav (dom/props {:class "flex space-x-4"})
                                    (dom/a (dom/props {:class "text-white" :href "#about"})
-                                          (dom/on "click" (e/fn [_e] (reset! !view-state :about)))
+                                          (dom/On-all "click" (e/fn [_e] (reset! !view-state :about)))
                                           (dom/text "About"))
                                    #_(dom/a (dom/props {:class "text-white" :href "#taskmanager"})
-                                            (dom/on "click" (e/fn [_e] (reset! !view-state :taskmanager)))
+                                            (dom/On-all "click" (e/fn [_e] (reset! !view-state :taskmanager)))
                                             (dom/text "Task Manager"))
                                    (dom/a (dom/props {:class "text-white" :href "#screenshare"})
-                                          (dom/on "click" (e/fn [_e] (reset! !view-state :screenshare)))
+                                          (dom/On-all "click" (e/fn [_e] (reset! !view-state :screenshare)))
                                           (dom/text "Screen Share"))
                                    (dom/a (dom/props {:class "text-white" :href "#user"})
-                                          (dom/on "click" (e/fn [_e] (js/alert "not implemented")))
+                                          (dom/On-all "click" (e/fn [_e] (js/alert "not implemented")))
                                           (dom/text user))))))))
 
 
@@ -75,7 +75,7 @@
               (dom/div (dom/props {:class "w-full max-w-md"})
                        (dom/h1 (dom/props {:class "text-3xl font-bold mb-6"}) (dom/text "Signup"))
                        (dom/form (dom/props {:class "bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4"})))
-              (dom/on "submit" submit-fn)
+              (dom/On-all "submit" submit-fn)
               (dom/div (dom/props {:class "mb-4"})
                        (dom/label (dom/props {:class "block text-gray-700 text-sm font-bold mb-2"} (dom/text "Username")))
                        (dom/input (dom/props {:id "user" :class "shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" :type "text" :placeholder "Username"})))
@@ -84,7 +84,7 @@
                        (dom/input (dom/props {:id "password" :class "shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline" :type "password" :placeholder "Password"})))
               (dom/div (dom/props {:class "flex items-center justify-between"})
                        (dom/button (dom/props {:class "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" :type "submit"})
-                                   (dom/on "click" submit-fn)
+                                   (dom/On-all "click" submit-fn)
                                    (dom/text "Login")))))))
 
 
@@ -143,14 +143,14 @@
     (e/client
      (binding [dom/node js/document.body]
        (dom/section (dom/props {:class "flex flex-col min-h-screen"})
-                    (Header. session)
+                    (Header session)
                     (if-not session
-                      (LoginOrSignup.)
+                      (LoginOrSignup)
                       (dom/div (dom/props {:class "flex-grow"})
                                (case view-state
-                                 :main (ScreenShare. session)
-                                 :screenshare (ScreenShare. session)
+                                 :main (ScreenShare session)
+                                 :screenshare (ScreenShare session)
                                  ;:taskmanager (TaskManager.)
                                  ;:login (Login.)
-                                 :about (About.))))
-                    (Footer.))))))
+                                 :about (About))))
+                    (Footer))))))

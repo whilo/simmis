@@ -1,8 +1,8 @@
 (ns is.simm.views.react
   #?(:cljs (:require-macros [is.simm.views.main :refer [with-reagent]]))
   (:require  [is.simm.tasks :refer [TaskManager]]
-             [hyperfiddle.electric :as e]
-             [hyperfiddle.electric-dom2 :as dom]
+             [hyperfiddle.electric3 :as e]
+             [hyperfiddle.electric-dom3 :as dom]
              #?(:clj [datahike.api :as d])
              #?(:cljs [reagent.core :as r])
              [missionary.core :as m]

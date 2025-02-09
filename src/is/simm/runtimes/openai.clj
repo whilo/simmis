@@ -83,7 +83,19 @@
 (comment
 
   (async/<!! (text-chat "gpt-4o-mini" "What is the capital of France?"))
-  
+
+  (println
+   (async/<!! (text-chat "gpt-4o-mini" "You are bootstrapping an AGI system on top of a distributed simulation engine with a git-like memory model in Clojure with Datahike. You can hook into APIs and export a user interface. ")))
+
+  (def business-ideas
+    (async/<!! (text-chat "gpt-4o-mini" "You are bootstrapping profitable economic systems on top of an AGI engine. You can hook into APIs and export a user interface. What business ideas could you persue? Pick ideas that can be executed with low effort, low risk and do not require a large investment. Maximize profits.")))
+
+  (println business-ideas)
+
+  (def goals
+    (async/<!! (text-chat "gpt-4o-mini" "What goals should AGI pursue beyond typical human goals?")))
+
+  (println goals)
 
 ;; vision chat
   (import '[java.nio.file Files Paths]

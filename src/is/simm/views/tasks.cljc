@@ -1,6 +1,6 @@
 (ns is.simm.views.tasks
-  (:require [hyperfiddle.electric :as e]
-            [hyperfiddle.electric-dom2 :as dom]
+  (:require [hyperfiddle.electric3 :as e]
+            [hyperfiddle.electric-dom3 :as dom]
             #?(:clj [datahike.api :as d])))
 
 ;; Saving this file will automatically recompile and update in your browser
@@ -105,7 +105,7 @@
                                :alt (str start)})))
         (dom/div (dom/props {:class "parent-timeline-text"})
           (dom/text text)
-          (dom/on "click" (e/fn [e]
+          (dom/On-all "click" (e/fn [e]
                             (.log js/console "click" e)
                             (reset! active-task text))))
         (dom/div (dom/props {:class "timeline-right"})
@@ -118,12 +118,12 @@
 
 (e/defn TaskManager []
   (let [active-task-title (e/client (e/watch !active-task))
-        [parent-title parent-start parent-end] (first (QueryParentTimeline. active-task-title))
-        [title start end] (first (QueryTimeline. active-task-title))]
+        [parent-title parent-start parent-end] (first (QueryParentTimeline active-task-title))
+        [title start end] (first (QueryTimeline active-task-title))]
     (e/client (dom/div (dom/props {:class "flex flex-col items-center justify-center"})
                 (dom/div (dom/props {:class "container mx-auto text-center"})
-                  (Task. !active-task parent-title parent-start parent-end)
-                  (Task. !active-task title start end)
+                  (Task !active-task parent-title parent-start parent-end)
+                  (Task !active-task title start end)
                   (dom/div (dom/props {:class "container w-11/12"})
-                    (e/for [[title start end] (QueryChildrenTimeline. title)]
-                      (Task. !active-task title start end))))))))
+                    (e/for [[title start end] (QueryChildrenTimeline title)]
+                      (Task !active-task title start end))))))))

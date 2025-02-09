@@ -1,24 +1,27 @@
-(ns is.simm.server-jetty
+(ns is.simm.server-jetty #_electric-starter-app.server-jetty
   "Electric integrated into a sample ring + jetty app."
   (:require
+   [is.simm.users :refer [authenticate]]
    [clojure.edn :as edn]
    [clojure.java.io :as io]
    [clojure.string :as str]
    [clojure.tools.logging :as log]
    [contrib.assert :refer [check]]
-   [hyperfiddle.electric-ring-adapter :as electric-ring]
+   [hyperfiddle.electric-ring-adapter3 :as electric-ring]
    [ring.adapter.jetty :as ring]
    [ring.middleware.basic-authentication :as auth]
    [ring.middleware.content-type :refer [wrap-content-type]]
    [ring.middleware.cookies :as cookies]
    [ring.middleware.params :refer [wrap-params]]
    [ring.middleware.resource :refer [wrap-resource]]
-   [ring.util.response :as res]
-   [is.simm.users :refer [authenticate]])
+   [ring.util.response :as res])
   (:import
    (org.eclipse.jetty.server.handler.gzip GzipHandler)
    (org.eclipse.jetty.websocket.server.config JettyWebSocketServletContainerInitializer JettyWebSocketServletContainerInitializer$Configurator)))
 
+;;; Demo middlewares
+
+#_(defn authenticate [username _password] username) ; demo (accept-all) authentication
 
 (defn wrap-demo-authentication "A Basic Auth example. Accepts any username/password and store the username in a cookie."
   [next-handler]
@@ -42,7 +45,6 @@
       ;; For any other route, delegate to next middleware
       (next-handler ring-req))))
 
-
 ;;; Electric integration
 
 (defn electric-websocket-middleware
@@ -57,8 +59,8 @@
   ;; Applied bottom-up
   (-> (electric-ring/wrap-electric-websocket next-handler entrypoint) ; 5. connect electric client
     ; 4. this is where you would add authentication middleware (after cookie parsing, before Electric starts)
-    (cookies/wrap-cookies) ; 3. makes cookies available to Electric app
-    (electric-ring/wrap-reject-stale-client config) ; 2. reject stale electric client
+    (electric-ring/wrap-reject-stale-client config) ; 3. reject stale electric client
+    (cookies/wrap-cookies) ; 2. makes cookies available to auth and Electric app
     (wrap-params))) ; 1. parse query params
 
 (defn get-modules [manifest-path]
@@ -102,11 +104,10 @@ information."
 (defn http-middleware [config]
   ;; these compose as functions, so are applied bottom up
   (-> not-found-handler
-    (wrap-index-page config) ; 3. otherwise fallback to default page file
-    (wrap-resource (:resources-path config)) ; 2. serve static file from classpath
-    (wrap-content-type) ; 1. detect content (e.g. for index.html)
-    (wrap-demo-router)
-
+    (wrap-index-page config) ; 4. otherwise fallback to default page file
+    (wrap-resource (:resources-path config)) ; 3. serve static file from classpath
+    (wrap-content-type) ; 2. detect content (e.g. for index.html)
+    (wrap-demo-router) ; 1. route
     ))
 
 (defn middleware [config entrypoint]
@@ -135,7 +136,7 @@ information."
 
 (defn start-server! [entrypoint
                      {:keys [port host]
-                      :or   {port 8080, host "0.0.0.0"}
+                      :or   {port 8081, host "0.0.0.0"}
                       :as   config}]
   (let [server     (ring/run-jetty (middleware config entrypoint)
                      (merge {:port         port

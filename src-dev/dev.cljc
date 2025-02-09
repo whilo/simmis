@@ -1,7 +1,10 @@
 (ns dev
   (:require
+   clojure.edn
    is.simm.views.main
-   [hyperfiddle.electric :as e]
+   #_electric-starter-app.main
+   [hyperfiddle.electric3 :as e]
+   #?(:cljs hyperfiddle.electric-client3)
    #?(:clj [is.simm.server-jetty :as jetty])
    #?(:clj [shadow.cljs.devtools.api :as shadow])
    #?(:clj [shadow.cljs.devtools.server :as shadow-server])
@@ -9,38 +12,40 @@
 
 (comment (-main)) ; repl entrypoint
 
-#?(:clj ;; Server Entrypoint
+#?(:clj ; server entrypoint
    (do
      (def config
-       {:host "0.0.0.0"
-        :port 8081
-        :resources-path "public/electric_starter_app"
-        :manifest-path ; contains Electric compiled program's version so client and server stays in sync
-        "public//electric_starter_app/js/manifest.edn"})
+       (merge
+         {:host "localhost"
+          :port 8081
+          :resources-path "public/electric_starter_app"
+          :manifest-path ; contains Electric compiled program's version so client and server stays in sync
+          "public/electric_starter_app/js/manifest.edn"}))
 
-     (defn -main [& _args]
+     (defn -main [& args]
        (log/info "Starting Electric compiler and server...")
 
-       (shadow-server/start!)
+       (shadow-server/start!) ; no-op in calva shadow-cljs configuration which starts this out of band
        (shadow/watch :dev)
+
        (comment (shadow-server/stop!))
 
        (def server (jetty/start-server!
                      (fn [ring-request]
-                       (e/boot-server {} is.simm.views.main/Main ring-request))
+                       (e/boot-server {} is.simm.views.main/Main (e/server ring-request)))
                      config))
-
-       (comment (.stop server))
+       (comment
+         (.stop server) ; jetty
+         (server)       ; httpkit
+         )
        )))
 
-#?(:cljs ;; Client Entrypoint
+#?(:cljs ; client entrypoint
    (do
-     (def electric-entrypoint (e/boot-client {} is.simm.views.main/Main nil))
-
      (defonce reactor nil)
 
      (defn ^:dev/after-load ^:export start! []
-       (set! reactor (electric-entrypoint
+       (set! reactor ((e/boot-client {} is.simm.views.main/Main (e/server nil))
                        #(js/console.log "Reactor success:" %)
                        #(js/console.error "Reactor failure:" %))))
 
