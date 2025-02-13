@@ -20,14 +20,13 @@
 
 (def api-key (:openai-key config))
 
-(defn encode-image [image-path]
-  (with-open [input-stream (io/input-stream image-path)]
-    (let [image-bytes (.readAllBytes input-stream)]
-      (.encodeToString (Base64/getEncoder) image-bytes))))
+(defn encode-file [file-path]
+  (with-open [input-stream (io/input-stream file-path)]
+    (let [file-bytes (.readAllBytes input-stream)]
+      (.encodeToString (Base64/getEncoder) file-bytes))))
 
 (def headers
-  {"Content-Type"  "application/json"
-   "Authorization" (str "Bearer " api-key)})
+  {"Authorization" (str "Bearer " api-key)})
 
 (defn payload [model content]
   (json/write-str
@@ -52,7 +51,7 @@
 (defn chat [model content]
   (let [res (promise-chan)
         cf (http/post "https://api.openai.com/v1/chat/completions"
-                      {:headers headers
+                      {:headers (assoc headers "Content-Type"  "application/json")
                        :body (payload model content)
                        :async true})]
     (-> cf
@@ -143,20 +142,76 @@
   
   )
 
+(comment
+  (defn stt [model input-path]
+    (let [audio-file ((py.- (py.- (py.- client audio) transcriptions) create) :model model :file ((py/path->py-obj "builtins.open") input-path "rb"))]
+      (py.- audio-file text)))
+  )
+
 (defn stt [model input-path]
-  (let [audio-file ((py.- (py.- (py.- client audio) transcriptions) create) :model model :file ((py/path->py-obj "builtins.open") input-path "rb"))]
-    (py.- audio-file text)))
+  (let [res (promise-chan)
+        request (http/post "https://api.openai.com/v1/audio/transcriptions"
+                           {:headers headers
+                            :multipart [{:name "file" :content (io/file input-path) :file-name input-path :mimetype "audio/wav"}
+                                        {:name "model" :content model}]
+                            :async true})]
+    (-> request
+        (.thenApply (reify Function
+                      (apply [_ response]
+                        (put! res
+                              (-> response
+                                  :body
+                                  json/read-str
+                                  (get "text"))))))
+        (.exceptionally (reify Function
+                          (apply [_ e]
+                            (put! res (ex-info "Error in OpenAI STT." {:type :error-in-openai :error e}))))))
+    res))
+
+(comment
+  (require '[missionary.core :as m])
+
+  (m/? (<! (stt-2 "whisper-1" "/tmp/microphone.wav")))
+
+  )
+
 
 (defn whisper-1 [input-path]
   (stt "whisper-1" input-path))
 
-(require-python '[pathlib :refer [Path]])
 
+
+
+(comment
+  (require-python '[pathlib :refer [Path]])
+
+  (defn tts-1 [text]
+    (let [res ((py.- (py.- (py.- client audio) speech) create) :model "tts-1" :voice "alloy" :input text)
+          rand-path (str "/tmp/" (java.util.UUID/randomUUID) ".mp3")]
+      ((py.- res stream_to_file) (Path rand-path))
+      rand-path))
+
+  )
+
+;; same but with http client
 (defn tts-1 [text]
-  (let [res ((py.- (py.- (py.- client audio) speech) create) :model "tts-1" :voice "alloy" :input text)
-        rand-path (str "/tmp/" (java.util.UUID/randomUUID) ".mp3")]
-    ((py.- res stream_to_file) (Path rand-path))
-    rand-path))
+  (let [res (promise-chan)
+        request (http/post "https://api.openai.com/v1/audio/speech"
+                           {:headers (assoc headers "Content-Type" "application/json")
+                            :body (json/write-str {:model "tts-1" :voice "alloy" :input text})
+                            :async true
+                            :as :stream})]
+    (-> request
+        (.thenApply (reify Function
+                      (apply [_ response]
+                        (let [rand-path (str "/tmp/" (java.util.UUID/randomUUID) ".mp3")]
+                          (io/copy (:body response) (io/file rand-path))
+                          (put! res rand-path)))))
+        (.exceptionally (reify Function
+                          (apply [_ e]
+                            (put! res (ex-info "Error in OpenAI TTS." {:type :error-in-openai :error e}))))))
+    res))
+
 
 (defn openai [[S peer [in out]]]
   (let [p (pub in (fn [{:keys [type]}]

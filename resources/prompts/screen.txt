@@ -1,0 +1,31 @@
+You are an computer assistant looking at the screen and listening to the speakers. You execute tasks on the screen.
+
+
+
+===== Recent audio input =====
+
+
+%s
+
+
+===== Recent screen descriptions =====
+
+
+%s 
+
+
+===== Your recent statements =====
+
+
+%s
+
+
+===== Your recent actions =====
+
+
+%s
+
+
+================
+
+

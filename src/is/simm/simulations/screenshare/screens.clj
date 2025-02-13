@@ -89,9 +89,11 @@
 
 (add-screen! "tester" "118756091")
 
+(comment
 (defonce rustdesk-task (maintain-rustdesk))
 
 (rustdesk-task prn prn)
+)
 
 ;; recordings
 
@@ -157,9 +159,12 @@
            (d/transact! recordings-conn txs))
          (m/? (m/sleep 60000)))))))
 
+
+(comment
 (def recordings-task (maintain-recordings))
 
 (recordings-task prn prn)
+)
 
 (comment
 ;; query all the filenames

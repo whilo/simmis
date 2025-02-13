@@ -1,1 +1,5 @@
-(ns user (:require [dev]))
+(ns user 
+  (:require [dev]
+            [hyperfiddle.rcf]))
+
+(hyperfiddle.rcf/enable!)
