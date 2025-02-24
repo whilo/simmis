@@ -3,7 +3,7 @@
   (:require  [is.simm.runtimes.openai :refer [text-chat chat whisper-1 tts-1]]
              [is.simm.prompts :as prompts]
              [clojure.core.async :refer [timeout put! chan pub sub close! take! poll! go-loop go] :as async]
-             [taoensso.timbre :refer [debug info warn] :as log]
+             [taoensso.timbre :refer [debug info warn error] :as log]
              [missionary.core :as m]
              [libpython-clj2.require :refer [require-python]]
              [libpython-clj2.python :refer [py. py.. py.-] :as py]
@@ -112,7 +112,7 @@
      (m/? (m/via m/blk (shell "ffmpeg" "-f" "pulse" "-i" device "-t" (str interval) filename)))
      filename)))
 
-(def audio-devices 
+(def audio-devices
   {:microphone "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
    :speakers "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp__sink.monitor"
    #_"bluez_sink.F8_DF_15_4F_1D_F0.a2dp_sink.monitor"})
@@ -125,9 +125,7 @@
 
   (def tts-test (m/? (<! (tts-1 "Hello, I am a computer."))))
 
-  (shell "vlc" tts-test)
-  
-  )
+  (shell "vlc" tts-test))
 
 
 ;; Audio
@@ -226,6 +224,8 @@
    :shift (py.- ecodes KEY_LEFTSHIFT)
    :ctrl (py.- ecodes KEY_LEFTCTRL)
    :alt (py.- ecodes KEY_LEFTALT)
+   :esc (py.- ecodes KEY_ESC)
+   :escape (py.- ecodes KEY_ESC)
 
    :a (py.- ecodes KEY_A)
    :b (py.- ecodes KEY_B)
@@ -265,16 +265,20 @@
    :9 (py.- ecodes KEY_9)
    :0 (py.- ecodes KEY_0)})
 
-(defn press-key [key duration]
+(defn press-keys [keys duration]
   (py/with-gil-stack-rc-context
-    (let [key (clj->ecode key)
+    (let [keys (map clj->ecode keys)
           ui (UInput)]
       (if key
         (do
-          (py. ui write (py.- ecodes EV_KEY) key 1)  ;; Key press
+          (doseq [key keys
+                  :when key]
+            (py. ui write (py.- ecodes EV_KEY) key 1))  ;; Key press
           (py. ui syn)
           (time/sleep duration)
-          (py. ui write (py.- ecodes EV_KEY) key 0)  ;; Key release
+          (doseq [key keys
+                  :when key]
+            (py. ui write (py.- ecodes EV_KEY) key 0))  ;; Key release
           (py. ui syn)
           (py. ui close))
         (warn "Invalid key" key))
@@ -294,8 +298,8 @@
 
 (defn mouse-click [button duration]
   (py/with-gil-stack-rc-context
-    (let [key ({:left-click (py.- ecodes BTN_LEFT)
-                :right-click (py.- ecodes BTN_RIGHT)} button)
+    (let [key ({:left (py.- ecodes BTN_LEFT)
+                :right (py.- ecodes BTN_RIGHT)} button)
           ui (UInput {(py.- ecodes EV_KEY) [(py.- ecodes BTN_LEFT) (py.- ecodes BTN_RIGHT)]})]
       (if key
         (do
@@ -308,7 +312,7 @@
       (py. ui close))))
 
 (comment
-  (press-key :a 0.1)
+  (press-keys [:a] 0.1)
 
   (mouse-move [13 500])
 
@@ -330,7 +334,7 @@
               :db/cardinality :db.cardinality/one}
              {:db/ident :audio/in
               :db/valueType :db.type/string
-              :db/cardinality :db.cardinality/one} 
+              :db/cardinality :db.cardinality/one}
              {:db/ident :audio/out
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
@@ -371,28 +375,25 @@
                      :event/role "user"
                      :screen/file "/tmp/test_screenshot_123.png"}])
 
-  
+
   (->> @conn
        (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
        (sort-by second)
-       ffirst
-       )
+       ffirst)
 
   ;; pull full event history out of conn
   (->> @conn
        (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
        (map first)
        (sort-by :event/created)
-       events->openai-messages)
-
-
-  )
+       events->openai-messages))
 
 (defn events->openai-messages [events]
   (map (fn [event]
          (let [role (get event :event/role)
                audio-in (get event :audio/in)
-               system-output (get event :system/output)
+               audio-out (get event :audio/out)
+               assistant-output (get event :assistant/output)
                screen-file (get event :screen/file)
                screen-transcript (get event :screen/transcript)
                action (get event :action)
@@ -402,20 +403,26 @@
              {:role role
               :content [{:type "text" :text (str created " audio-in: " audio-in)}]}
 
-             (and role system-output)
+             (and role audio-out)
              {:role role
-              :content [{:type "text" :text (str created " system-output: " system-output)}]}
+              :content [{:type "text" :text (str created " audio-out: " audio-out)}]}
+
+             (and role assistant-output)
+             {:role role
+              :content [{:type "text" :text (str created " assistant-output: " assistant-output)}]}
 
              (and role screen-transcript)
              {:role role
-              :content [{:type "text" :text (str created "screen-transcript: " screen-transcript)}]}
+              :content [{:type "text" :text (str created " screen-transcript: " screen-transcript)}]}
+
+             :else (do (error "missing event" event)
+                       {:role role :content
+                        [{:type "text" :text "Missing event."}]}) 
 
              #_(and role screen-file)
              #_{:role role
                 :content [{:type "image_url"
-                           :image_url {:url (str "data:image/jpeg;base64," (encode-file screen-file))}}]}
-
-             )))
+                           :image_url {:url (str "data:image/jpeg;base64," (encode-file screen-file))}}]})))
        events))
 
 
@@ -469,9 +476,9 @@
                    last-screen (->> @conn
                                     (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
                                     (sort-by second)
+                                    reverse
                                     first ;; newest
-                                    first
-                                    )
+                                    first)
                    messages (->> @conn
                                  (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
                                  (map first)
@@ -502,7 +509,7 @@
              (recur)))))
 
 (comment
-  
+
 
   (log/set-min-level! :debug)
 
@@ -532,66 +539,13 @@
      #(prn ::error %)))
 
   (baseline-0-dispose)
-
+  
+  
   )
 
 
-(defn baseline-1 []
-  (let [!audio-in (atom [])
-        !audio-out (atom [])
-        !screen-in (atom [])
-        !action-out (atom [])]
-    ;; run audio and screen perception in
-    (m/race (audio-listen (:microphone audio-devices) 5 #(swap! !audio-in conj %))
-            (audio-listen (:speakers  audio-devices) 5 #(swap! !audio-out conj %))
-            (screen-watch 10 #(swap! !screen-in conj [%1 %2]))
-
-            (m/sp
-             (loop []
-               (let [last-screen (first (last @!screen-in))]
-                 (debug "talk loop")
-                 (when last-screen
-                   (let [statement (m/? (vlm (slurp (io/resource "prompts/plaicraft-short.txt"))
-                   #_(str prompts/minecraft
-                                                  "If there is nothing new to say then reply with QUIET. Otherwise say the next two sentences from the first person perspective in a fun and playful style:\n")
-                                             last-screen
-                                             (map second @!audio-in)
-                                             @!audio-out
-                                             (map second @!screen-in)
-                                             @!action-out))]
-                     #_(debug "statement" statement)
-                     (when-not (.contains statement "QUIET")
-                       (swap! !audio-out conj statement)
-                       (m/? (play-audio (m/? (<! (tts-1 statement)))))))))
-               (m/? (m/sleep 1000))
-               (recur)))
-
-            (m/sp
-             (m/? (m/sleep 20000))
-             (loop []
-               (debug "action loop")
-               (let [last-screen (first (last @!screen-in))]
-                 (if-not last-screen
-                   (m/? (m/sleep 1000))
-                   (let [_ (debug "last-screen" last-screen)
-                         raw-actions (m/? (vlm #_(str prompts/minecraft
-                                                    "Given this context and latest screenshot, provide a long and robust action sequence for the next 60 seconds in Clojure edn only, e.g.: [{:key :a :duration 0.3}, {:key :1 :duration 0.1}, {:key :space :duration 0.1}, {:mouse :left-click :duration 5.0}, {:mouse :move :relative [-5 27]}]. You can provide an empty vector if there is nothing to do.:\n")
-                                                    (slurp (io/resource "prompts/plaicraft-short.txt"))
-                                               last-screen
-                                               (map second @!audio-in)
-                                               @!audio-out
-                                               (map second @!screen-in)
-                                               @!action-out))
-                         actions (parse-spec raw-actions ::actions [])]
-                     (debug "actions" raw-actions actions)
-                     (doseq [{:keys [key duration mouse relative]
-                              :as action} actions]
-                       (swap! !action-out conj action)
-                       (cond key (press-key key duration)
-                             (and mouse relative) (mouse-move relative)
-                             (and mouse duration) (mouse-click mouse duration)))))
-                 (recur))))))
-  #_(m/race (audio-listen (:microphone audio-devices)
+(defn baseline-1 [conn]
+  (m/race (audio-listen (:microphone audio-devices)
                         10
                         #(d/transact! conn [{:audio/in %
                                              :audio/device (:microphone audio-devices)
@@ -613,39 +567,44 @@
 
           (m/sp
            (loop []
-             (debug "talk loop")
-             (let [system-prompt (slurp (io/resource "prompts/plaicraft.txt"))
+             (debug "talk & action loop")
+             (let [system-prompt (slurp (io/resource "prompts/plaicraft-short.txt"))
                    last-screen (->> @conn
                                     (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
                                     (sort-by second)
+                                    reverse
                                     first ;; newest
                                     first)
                    messages (->> @conn
                                  (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
                                  (map first)
                                  (sort-by :event/created)
+                                 reverse
                                  events->openai-messages)]
                (debug "last-screen" last-screen)
                (debug "messages" messages)
 
                (if (and (seq messages) last-screen) #_last-screen
-                   (let [statement (m/? (<! (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
-                                                  (vec (concat [{:role "developer" :content
-                                                                 [{:type "text" :text system-prompt}]}]
-                                                               messages
-                                                               [{:role "user" :content
-                                                                 [{:type "text" :text "Current screenshot image:"}
-                                                                  {:type "image_url"
-                                                                   :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))]
-                     (debug "statement" statement)
-                     (if-not (.contains statement "QUIET")
-                       (do
-                         (d/transact! conn [{:audio/out statement
-                                             :audio/device (:speakers audio-devices)
-                                             :event/created (java.util.Date.)
-                                             :event/role "developer"}])
-                         (m/? (play-audio (m/? (<! (tts-1 statement))))))
-                       (m/? (m/sleep 1000))))
+                   (let [output (m/? (<! (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
+                                               (vec (concat [{:role "developer" :content
+                                                              [{:type "text" :text system-prompt}]}]
+                                                            messages
+                                                            [{:role "user" :content
+                                                              [{:type "text" :text "Current screenshot:"}
+                                                               {:type "image_url"
+                                                                :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))
+                         _ (debug "system output" output)
+                         actions (parse-json output [])]
+                     (debug "parsed" actions)
+                     (d/transact! conn [{:assistant/output output
+                                         :event/created (java.util.Date.)
+                                         :event/role "developer"}])
+                     (doseq [{:strs [action keys duration button relative text]} actions]
+                       (case action
+                         "statement" (m/? (play-audio (m/? (<! (tts-1 text)))))
+                         "press-keys" (press-keys (map keyword keys) duration)
+                         "mouse-move" (mouse-move relative)
+                         "mouse-click" (mouse-click (keyword button) duration))))
                    (m/? (m/sleep 1000))))
              (recur)))))
 
@@ -668,9 +627,8 @@
   (d/transact conn schema)
 
 
-  (+ 1 2)
 
-  (def baseline-1-test (baseline-1))
+  (def baseline-1-test (baseline-1 conn))
 
   (def baseline-1-dispose
     (baseline-1-test
@@ -678,15 +636,14 @@
      #(prn ::error %)))
 
   (baseline-1-dispose)
-
+  
+  
   )
+
+
 
 (defn fastest [& args]
   (m/absolve (apply m/race (map m/attempt args))))
 
 
-(comment
-
-  
-
-  )
+(comment)
