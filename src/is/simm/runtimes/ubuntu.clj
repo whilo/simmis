@@ -11,10 +11,12 @@
              [datahike.api :as d]
 
              [clojure.edn :as edn]
+             [clojure.data.json :as json]
              [clojure.spec.alpha :as s]
              [clojure.string :as str]
              [clojure.java.io :as io]
-             [clojure.java.shell :as shell])
+             [clojure.java.shell :as shell]
+             [clojure.data.json :as json])
   (:import [java.util Base64]))
 
 
@@ -179,7 +181,7 @@
                   (m/? (m/join vector
                                (m/sleep (* interval 1000))
                                (m/sp
-                                (let [text (time (m/? (vlm screenshot-prompt f)))]
+                                (let [text "" #_(time (m/? (vlm screenshot-prompt f)))]
                                   #_(debug "screen text: " text)
                                   (cb f text)))))
                   nil))
@@ -328,11 +330,11 @@
               :db/cardinality :db.cardinality/one}
              {:db/ident :audio/in
               :db/valueType :db.type/string
-              :db/cardinality :db.cardinality/one}
-             {:db/ident :audio/device
+              :db/cardinality :db.cardinality/one} 
+             {:db/ident :audio/out
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
-             {:db/ident :audio/out
+             {:db/ident :audio/device
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
              {:db/ident :screen/file
@@ -341,7 +343,7 @@
              {:db/ident :screen/transcript
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
-             {:db/ident :action
+             {:db/ident :assistant/output
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}])
 
@@ -390,7 +392,7 @@
   (map (fn [event]
          (let [role (get event :event/role)
                audio-in (get event :audio/in)
-               audio-out (get event :audio/out)
+               system-output (get event :system/output)
                screen-file (get event :screen/file)
                screen-transcript (get event :screen/transcript)
                action (get event :action)
@@ -400,9 +402,9 @@
              {:role role
               :content [{:type "text" :text (str created " audio-in: " audio-in)}]}
 
-             (and role audio-out)
+             (and role system-output)
              {:role role
-              :content [{:type "text" :text (str created " audio-out: " audio-out)}]}
+              :content [{:type "text" :text (str created " system-output: " system-output)}]}
 
              (and role screen-transcript)
              {:role role
@@ -413,23 +415,30 @@
                 :content [{:type "image_url"
                            :image_url {:url (str "data:image/jpeg;base64," (encode-file screen-file))}}]}
 
-             (and role action)
-             {:role role
-              :content [{:type "text" :text (str created "action:" action)}]})))
+             )))
        events))
 
 
-(def system-prompt "You are a reactive computer assistant actively observing the screen, listening to the speakers and user and your statements are put out on the speakers. 
 
-===== Instructions =====
-- Your goal is to assist the user by understanding the context and responding helpfully and concisely. 
-- Maintain continuity by considering previous audio inputs, history of screen transcripts, your statements, and your actions.
-- Respond *only* to any questions asked by the user in the audio input! Consider the context from the screen and your recent statements.
-- Do not repeat yourself in terms of your recent statements! Continue from where you left off to maintain a natural conversation flow.
-- Do not explicitly tell the user to feel free to ask questions or follow up!
-- You might receive your own earlier statements on audio input also on audio input as a feedback. Ignore those.
-- The timestamps are for your orientation and do not need to be mentioned in your responses.
-- If there is nothing new to add answering the questions of the user, e.g. because you answered it and no further question has been asked, respond with \"QUIET\". Otherwise, provide the next one or two sentences in your ongoing conversation with the user.")
+(s/def ::actions (s/coll-of (s/or :key (s/keys :req-un [::key ::duration])
+                                  :mouse (s/keys :req-un [::mouse]))))
+
+(defn parse-spec [input spec default]
+  (try
+    (let [p (second (.split input "```clojure"))
+          p (first (.split p "```"))
+          p (edn/read-string p)]
+      (if (s/valid? spec p) p default))
+    (catch Exception _ default)))
+
+(defn parse-json [input default]
+  (try
+    (let [p (second (.split input "```json"))
+          p (first (.split p "```"))
+          p (json/read-str p)]
+      p)
+    (catch Exception _ default)))
+
 
 
 (defn baseline-0 [conn]
@@ -456,7 +465,8 @@
           (m/sp
            (loop []
              (debug "talk loop")
-             (let [last-screen (->> @conn
+             (let [system-prompt (slurp (io/resource "prompts/screen.txt"))
+                   last-screen (->> @conn
                                     (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
                                     (sort-by second)
                                     first ;; newest
@@ -470,21 +480,20 @@
                (debug "last-screen" last-screen)
                (debug "messages" messages)
 
-               (if (and (not (empty? messages)) last-screen) #_last-screen
-                   (let [statement (m/? (<! (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
-                                                  (vec (concat [{:role "developer" :content
-                                                                 [{:type "text" :text system-prompt}]}
-                                                                ]
-                                                               messages
-                                                               [{:role "user" :content
-                                                                 [#_{:type "text" :text "Current screenshot:"}
-                                                                  {:type "image_url"
-                                                                   :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))]
-                     (debug "statement" statement)
-                     (if-not (.contains statement "QUIET")
+               (if (and (seq messages) last-screen) #_last-screen
+                   (let [output (m/? (<! (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
+                                               (vec (concat [{:role "developer" :content
+                                                              [{:type "text" :text system-prompt}]}]
+                                                            messages
+                                                            [{:role "user" :content
+                                                              [{:type "text" :text "Current screenshot:"}
+                                                               {:type "image_url"
+                                                                :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))
+                         _ (debug "system output" output)
+                         {:strs [statement]} (parse-json output {})]
+                     (if (and statement (not (.contains statement "QUIET")))
                        (do
-                         (d/transact! conn [{:audio/out statement
-                                             :audio/device (:speakers audio-devices)
+                         (d/transact! conn [{:assistant/output statement
                                              :event/created (java.util.Date.)
                                              :event/role "developer"}])
                          (m/? (play-audio (m/? (<! (tts-1 statement))))))
@@ -493,6 +502,8 @@
              (recur)))))
 
 (comment
+  
+
   (log/set-min-level! :debug)
 
 
@@ -525,22 +536,11 @@
   )
 
 
-(s/def ::actions (s/coll-of (s/or :key (s/keys :req-un [::key ::duration])
-                                  :mouse (s/keys :req-un [::mouse]))))
-
-(defn parse-spec [input spec default]
-  (try
-    (let [p (second (.split input "```clojure"))
-          p (first (.split p "```"))
-          p (edn/read-string p)]
-      (if (s/valid? spec p) p default))
-    (catch Exception _ [])))
-
 (defn baseline-1 []
   (let [!audio-in (atom [])
         !audio-out (atom [])
         !screen-in (atom [])
-        !action-out (atom []) ]
+        !action-out (atom [])]
     ;; run audio and screen perception in
     (m/race (audio-listen (:microphone audio-devices) 5 #(swap! !audio-in conj %))
             (audio-listen (:speakers  audio-devices) 5 #(swap! !audio-out conj %))
@@ -551,17 +551,18 @@
                (let [last-screen (first (last @!screen-in))]
                  (debug "talk loop")
                  (when last-screen
-                       (let [statement (m/? (vlm (str prompts/minecraft
-                                                      "If there is nothing new to say then reply with QUIET. Otherwise say the next two sentences from the first person perspective in a fun and playful style:\n")
-                                                 last-screen
-                                                 (map second @!audio-in)
-                                                 @!audio-out
-                                                 (map second @!screen-in)
-                                                 @!action-out)) ]
-                         #_(debug "statement" statement)
-                         (when-not (.contains statement "QUIET")
-                           (swap! !audio-out conj statement)
-                           (m/? (play-audio (m/? (<! (tts-1 statement)))))))))
+                   (let [statement (m/? (vlm (slurp (io/resource "prompts/plaicraft-short.txt"))
+                   #_(str prompts/minecraft
+                                                  "If there is nothing new to say then reply with QUIET. Otherwise say the next two sentences from the first person perspective in a fun and playful style:\n")
+                                             last-screen
+                                             (map second @!audio-in)
+                                             @!audio-out
+                                             (map second @!screen-in)
+                                             @!action-out))]
+                     #_(debug "statement" statement)
+                     (when-not (.contains statement "QUIET")
+                       (swap! !audio-out conj statement)
+                       (m/? (play-audio (m/? (<! (tts-1 statement)))))))))
                (m/? (m/sleep 1000))
                (recur)))
 
@@ -570,25 +571,83 @@
              (loop []
                (debug "action loop")
                (let [last-screen (first (last @!screen-in))]
-               (if-not last-screen
-                 (m/? (m/sleep 1000))
-                 (let [_ (debug "last-screen" last-screen)
-                       raw-actions (m/? (vlm (str prompts/minecraft
-                                                  "Given this context and latest screenshot, provide a long and robust action sequence for the next 60 seconds in Clojure edn only, e.g.: [{:key :a :duration 0.3}, {:key :1 :duration 0.1}, {:key :space :duration 0.1}, {:mouse :left-click :duration 5.0}, {:mouse :move :relative [-5 27]}]. You can provide an empty vector if there is nothing to do.:\n")
-                                             last-screen
-                                             (map second @!audio-in)
-                                             @!audio-out
-                                             (map second @!screen-in)
-                                             @!action-out))
-                       actions (parse-spec raw-actions ::actions [])]
-                   (debug "actions" raw-actions actions)
-                   (doseq [{:keys [key duration mouse relative]
-                            :as action} actions]
-                     (swap! !action-out conj action)
-                     (cond key (press-key key duration)
-                           (and mouse relative) (mouse-move relative)
-                           (and mouse duration) (mouse-click mouse duration)))))
-                 (recur)))))))
+                 (if-not last-screen
+                   (m/? (m/sleep 1000))
+                   (let [_ (debug "last-screen" last-screen)
+                         raw-actions (m/? (vlm #_(str prompts/minecraft
+                                                    "Given this context and latest screenshot, provide a long and robust action sequence for the next 60 seconds in Clojure edn only, e.g.: [{:key :a :duration 0.3}, {:key :1 :duration 0.1}, {:key :space :duration 0.1}, {:mouse :left-click :duration 5.0}, {:mouse :move :relative [-5 27]}]. You can provide an empty vector if there is nothing to do.:\n")
+                                                    (slurp (io/resource "prompts/plaicraft-short.txt"))
+                                               last-screen
+                                               (map second @!audio-in)
+                                               @!audio-out
+                                               (map second @!screen-in)
+                                               @!action-out))
+                         actions (parse-spec raw-actions ::actions [])]
+                     (debug "actions" raw-actions actions)
+                     (doseq [{:keys [key duration mouse relative]
+                              :as action} actions]
+                       (swap! !action-out conj action)
+                       (cond key (press-key key duration)
+                             (and mouse relative) (mouse-move relative)
+                             (and mouse duration) (mouse-click mouse duration)))))
+                 (recur))))))
+  #_(m/race (audio-listen (:microphone audio-devices)
+                        10
+                        #(d/transact! conn [{:audio/in %
+                                             :audio/device (:microphone audio-devices)
+                                             :event/created (java.util.Date.)
+                                             :event/role "user"}]))
+
+          (audio-listen (:speakers audio-devices)
+                        10
+                        #(d/transact! conn [{:audio/out %
+                                             :audio/device (:speakers audio-devices)
+                                             :event/created (java.util.Date.)
+                                             :event/role "developer"}]))
+
+          (screen-watch 10
+                        #(d/transact! conn [{:screen/file %1
+                                             :screen/transcript %2
+                                             :event/created (java.util.Date.)
+                                             :event/role "user"}]))
+
+          (m/sp
+           (loop []
+             (debug "talk loop")
+             (let [system-prompt (slurp (io/resource "prompts/plaicraft.txt"))
+                   last-screen (->> @conn
+                                    (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
+                                    (sort-by second)
+                                    first ;; newest
+                                    first)
+                   messages (->> @conn
+                                 (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
+                                 (map first)
+                                 (sort-by :event/created)
+                                 events->openai-messages)]
+               (debug "last-screen" last-screen)
+               (debug "messages" messages)
+
+               (if (and (seq messages) last-screen) #_last-screen
+                   (let [statement (m/? (<! (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
+                                                  (vec (concat [{:role "developer" :content
+                                                                 [{:type "text" :text system-prompt}]}]
+                                                               messages
+                                                               [{:role "user" :content
+                                                                 [{:type "text" :text "Current screenshot image:"}
+                                                                  {:type "image_url"
+                                                                   :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))]
+                     (debug "statement" statement)
+                     (if-not (.contains statement "QUIET")
+                       (do
+                         (d/transact! conn [{:audio/out statement
+                                             :audio/device (:speakers audio-devices)
+                                             :event/created (java.util.Date.)
+                                             :event/role "developer"}])
+                         (m/? (play-audio (m/? (<! (tts-1 statement))))))
+                       (m/? (m/sleep 1000))))
+                   (m/? (m/sleep 1000))))
+             (recur)))))
 
 
 ;; Observations & problems
@@ -598,6 +657,19 @@
 (comment
   ;; don't forget to chmod and chgrp /dev/uinput permissions
 
+  (def cfg {:store {:backend :file :path "/tmp/baseline-1"}})
+
+  (def cfg (d/create-database cfg))
+
+  (d/delete-database cfg)
+
+  (def conn (d/connect cfg))
+
+  (d/transact conn schema)
+
+
+  (+ 1 2)
+
   (def baseline-1-test (baseline-1))
 
   (def baseline-1-dispose
@@ -606,8 +678,15 @@
      #(prn ::error %)))
 
   (baseline-1-dispose)
-  
+
   )
 
 (defn fastest [& args]
   (m/absolve (apply m/race (map m/attempt args))))
+
+
+(comment
+
+  
+
+  )

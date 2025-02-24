@@ -80,7 +80,7 @@
                                       (get "content"))))))
         (.exceptionally (reify Function
                           (apply [_ e]
-                            (put! res (ex-info "Error in OpenAI chat." {:type :error-in-openai :error e}))))))
+                            (put! res (ex-info "Error in OpenAI chat." {:type :error-in-openai :error (ex-message e)}))))))
     res))
 
 
