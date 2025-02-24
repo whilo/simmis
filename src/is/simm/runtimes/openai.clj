@@ -14,7 +14,8 @@
             [superv.async :refer [S go-try go-loop-try <? put?]]
             [clojure.data.json :as json]
             [babashka.http-client :as http]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [clojure.spec.alpha :as s])
   (:import [java.util Base64]
            [java.util.function Function]))
 
@@ -28,15 +29,25 @@
 (def headers
   {"Authorization" (str "Bearer " api-key)})
 
-(defn payload [model content]
+;; spec for openai messages
+(s/def ::openai-message (s/keys :req-un [::role ::content]))
+(s/def ::role string?)
+(s/def ::content (s/or :text string? :image_url (s/keys :req-un [::url])))
+(s/def ::url string?)
+
+(s/fdef payload
+  :args (s/cat :model string? :messages (s/coll-of ::openai-message :kind vector?))
+  :ret string?)
+(defn payload [model messages]
   (json/write-str
     {"model" model
-     "messages" [{"role" "user"
-                  "content" content
-                  #_[{"type" "text"
-                      "text" text}
-                     {"type" "image_url"
-                      "image_url" {"url" (str "data:image/jpeg;base64," base64-image)}}]}]
+     "messages" messages 
+     #_[{"role" "user"
+         "content" 
+         [{"type" "text"
+           "text" text}
+          {"type" "image_url"
+           "image_url" {"url" (str "data:image/jpeg;base64," base64-image)}}]}]
      ;"max_tokens" 300
      }))
 
@@ -48,11 +59,14 @@
                    "o1-preview" 128000
                    "o1-mini" 128000 })
 
-(defn chat [model content]
+(s/fdef chat
+  :args (s/cat :model string? :messages (s/coll-of ::openai-message :kind vector?))
+  :ret (s/cat :response string?))
+(defn chat [model messages]
   (let [res (promise-chan)
         cf (http/post "https://api.openai.com/v1/chat/completions"
                       {:headers (assoc headers "Content-Type"  "application/json")
-                       :body (payload model content)
+                       :body (payload model messages)
                        :async true})]
     (-> cf
         (.thenApply (reify Function
@@ -70,6 +84,9 @@
     res))
 
 
+(s/fdef text-chat 
+  :args (s/cat :model string? :text string?)
+  :ret (s/cat :response string?))
 (defn text-chat [model text]
   (let [res (chan)]
     (if (>= (count text) (* 4 (window-sizes model)))
@@ -77,7 +94,8 @@
           (put! res (ex-info "Sorry, the text is too long for this model. Please try a shorter text." 
                              {:type ::text-too-long :model model :text-start (subs text 0 100) :count (count text)}))
           res)
-      (chat model [{"type" "text" "text" text}]))))
+      (chat model [{"role" "user" 
+                    "content" [{"type" "text" "text" text}]}]))))
 
 (comment
 
@@ -153,7 +171,8 @@
         request (http/post "https://api.openai.com/v1/audio/transcriptions"
                            {:headers headers
                             :multipart [{:name "file" :content (io/file input-path) :file-name input-path :mimetype "audio/wav"}
-                                        {:name "model" :content model}]
+                                        {:name "model" :content model}
+                                        {:name "language" :content "en"}]
                             :async true})]
     (-> request
         (.thenApply (reify Function
