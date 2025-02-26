@@ -10,8 +10,6 @@
              [hyperfiddle.rcf :refer [tests]]
              [datahike.api :as d]
 
-             [clojure.edn :as edn]
-             [clojure.data.json :as json]
              [clojure.spec.alpha :as s]
              [clojure.string :as str]
              [clojure.java.io :as io]
@@ -268,26 +266,24 @@
 (defn press-keys [keys duration]
   (py/with-gil-stack-rc-context
     (let [keys (map clj->ecode keys)
+          duration (or duration 0.1)
           ui (UInput)]
-      (if key
-        (do
-          (doseq [key keys
-                  :when key]
-            (py. ui write (py.- ecodes EV_KEY) key 1))  ;; Key press
-          (py. ui syn)
-          (time/sleep duration)
-          (doseq [key keys
-                  :when key]
-            (py. ui write (py.- ecodes EV_KEY) key 0))  ;; Key release
-          (py. ui syn)
-          (py. ui close))
-        (warn "Invalid key" key))
+      (doseq [key keys
+              :when key]
+        (py. ui write (py.- ecodes EV_KEY) key 1))  ;; Key press
+      (py. ui syn)
+      (time/sleep duration)
+      (doseq [key keys
+              :when key]
+        (py. ui write (py.- ecodes EV_KEY) key 0))  ;; Key release
+      (py. ui syn)
       (py. ui close))))
 
 (defn mouse-move [relative]
   (py/with-gil-stack-rc-context
     (let [[x y] relative
-          ui (UInput {(py.- ecodes EV_REL) [(py.- ecodes REL_X) (py.- ecodes REL_Y)]})]
+          ui (UInput {(py.- ecodes EV_KEY) [(py.- ecodes BTN_LEFT) (py.- ecodes BTN_RIGHT)]
+                      (py.- ecodes EV_REL) [(py.- ecodes REL_X) (py.- ecodes REL_Y)]})]
       (if (and x y)
         (do
           (py. ui write (py.- ecodes EV_REL) (py.- ecodes REL_X) x)
@@ -300,6 +296,7 @@
   (py/with-gil-stack-rc-context
     (let [key ({:left (py.- ecodes BTN_LEFT)
                 :right (py.- ecodes BTN_RIGHT)} button)
+          duration (or duration 0.1)
           ui (UInput {(py.- ecodes EV_KEY) [(py.- ecodes BTN_LEFT) (py.- ecodes BTN_RIGHT)]})]
       (if key
         (do
@@ -314,9 +311,25 @@
 (comment
   (press-keys [:a] 0.1)
 
-  (mouse-move [13 500])
+  (mouse-move [0 80])
 
-  (mouse-click :right-click 2.0))
+  (dotimes [_ 10]
+    (Thread/sleep 2000)
+    (mouse-move [0 200]))
+
+  (mouse-click :right 2.0)
+
+  (let [[x y] [200 200]
+        ui (UInput {(py.- ecodes EV_REL) [(py.- ecodes REL_X) (py.- ecodes REL_Y)]})]
+    (if (and x y)
+      (do
+        (py. ui write (py.- ecodes EV_REL) (py.- ecodes REL_X) x)
+        (py. ui write (py.- ecodes EV_REL) (py.- ecodes REL_Y) y)))
+    (py. ui syn)
+    (py. ui close))
+
+
+  )
 
 
 ;; ===== Agent =====
@@ -426,27 +439,28 @@
        events))
 
 
+(s/def ::actions (s/coll-of (s/or :statement (s/keys :req-un [::action ::text]
+                                                     :opt-un [::duration])
+                                  :press-keys (s/keys :req-un [::action ::keys])
+                                  :mouse-move (s/keys :req-un [::action ::relative])
+                                  :mouse-click (s/keys :req-un [::action ::button]
+                                                       :opt-un [::duration]))))
 
-(s/def ::actions (s/coll-of (s/or :key (s/keys :req-un [::key ::duration])
-                                  :mouse (s/keys :req-un [::mouse]))))
-
-(defn parse-spec [input spec default]
-  (try
-    (let [p (second (.split input "```clojure"))
-          p (first (.split p "```"))
-          p (edn/read-string p)]
-      (if (s/valid? spec p) p default))
-    (catch Exception _ default)))
+(s/def ::action string?)
+(s/def ::text string?)
+(s/def ::keys (s/coll-of string?))
+(s/def ::duration pos?)
+(s/def ::button string?)
+(s/def ::relative (s/tuple number? number?))
 
 (defn parse-json [input default]
   (try
     (let [p (second (.split input "```json"))
           p (first (.split p "```"))
-          p (json/read-str p)]
-      p)
+          p (json/read-str p :key-fn keyword)]
+      (if (s/valid? ::actions p)
+        p default))
     (catch Exception _ default)))
-
-
 
 (defn baseline-0 [conn]
   (m/race (audio-listen (:microphone audio-devices)
@@ -528,7 +542,8 @@
        (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
        (map first)
        (sort-by :event/created)
-       reverse)
+       reverse
+       events->openai-messages)
 
 
   (def baseline-0-test (baseline-0 conn))
@@ -559,7 +574,7 @@
                                              :event/created (java.util.Date.)
                                              :event/role "developer"}]))
 
-          (screen-watch 10
+          #_(screen-watch 10
                         #(d/transact! conn [{:screen/file %1
                                              :screen/transcript %2
                                              :event/created (java.util.Date.)
@@ -569,17 +584,18 @@
            (loop []
              (debug "talk & action loop")
              (let [system-prompt (slurp (io/resource "prompts/plaicraft-short.txt"))
-                   last-screen (->> @conn
+                   #_#_last-screen (->> @conn
                                     (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
                                     (sort-by second)
                                     reverse
                                     first ;; newest
                                     first)
+                   last-screen (str "/tmp/screenshot-" (rand-int 1000000) ".png")
+                   _  (m/? (screenshot last-screen))
                    messages (->> @conn
                                  (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
                                  (map first)
                                  (sort-by :event/created)
-                                 reverse
                                  events->openai-messages)]
                (debug "last-screen" last-screen)
                (debug "messages" messages)
@@ -599,7 +615,7 @@
                      (d/transact! conn [{:assistant/output output
                                          :event/created (java.util.Date.)
                                          :event/role "developer"}])
-                     (doseq [{:strs [action keys duration button relative text]} actions]
+                     (doseq [{:keys [action keys duration button relative text]} actions]
                        (case action
                          "statement" (m/? (play-audio (m/? (<! (tts-1 text)))))
                          "press-keys" (press-keys (map keyword keys) duration)
@@ -645,5 +661,3 @@
 (defn fastest [& args]
   (m/absolve (apply m/race (map m/attempt args))))
 
-
-(comment)
