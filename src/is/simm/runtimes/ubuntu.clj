@@ -511,13 +511,13 @@
                                                                {:type "image_url"
                                                                 :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))
                          _ (debug "system output" output)
-                         {:strs [statement]} (parse-json output {})]
-                     (if (and statement (not (.contains statement "QUIET")))
+                         parsed (parse-json output {})]
+                     (if parsed
                        (do
-                         (d/transact! conn [{:assistant/output statement
+                         (d/transact! conn [{:assistant/output output
                                              :event/created (java.util.Date.)
                                              :event/role "developer"}])
-                         (m/? (play-audio (m/? (<! (tts-1 statement))))))
+                         #_(m/? (play-audio (m/? (<! (tts-1 statement))))))
                        (m/? (m/sleep 1000))))
                    (m/? (m/sleep 1000))))
              (recur)))))
@@ -656,8 +656,21 @@
   
   )
 
-
-
 (defn fastest [& args]
   (m/absolve (apply m/race (map m/attempt args))))
 
+
+(defn -main [& _args]
+  (let [cfg {:store {:backend :file :path "/tmp/baseline-1"}}
+        _ (d/delete-database cfg)
+        cfg (d/create-database cfg)
+        conn (d/connect cfg)]
+    (d/transact conn schema)
+    (let [baseline-1-test (baseline-1 conn)]
+      (let [baseline-1-dispose
+            (baseline-1-test
+             #(prn ::success %)
+             #(prn ::error %))]
+             ;; sleep forever
+        (async/<!! (chan))
+        (baseline-1-dispose)))))
