@@ -511,14 +511,17 @@
                                                                {:type "image_url"
                                                                 :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))
                          _ (debug "system output" output)
-                         parsed (parse-json output {})]
-                     (if parsed
-                       (do
-                         (d/transact! conn [{:assistant/output output
-                                             :event/created (java.util.Date.)
-                                             :event/role "developer"}])
-                         #_(m/? (play-audio (m/? (<! (tts-1 statement))))))
-                       (m/? (m/sleep 1000))))
+                         actions (parse-json output {})]
+                     (d/transact! conn [{:assistant/output output
+                                         :event/created (java.util.Date.)
+                                         :event/role "developer"}])
+                     (doseq [{:keys [action keys duration button relative text] :as args} actions]
+                       (case action
+                         "statement" (m/? (play-audio (m/? (<! (tts-1 text)))))
+                         "press-keys" (press-keys (map keyword keys) duration)
+                         "mouse-move" (mouse-move relative)
+                         "mouse-click" (mouse-click (keyword button) duration)
+                         (prn "Not supported yet" action args))))
                    (m/? (m/sleep 1000))))
              (recur)))))
 
