@@ -19,7 +19,6 @@
          db (e/watch screens-conn)
          running-screens (set (keys (e/watch !running-rustdesks)))
          screens (get-screens db user)]
-     (prn "server screen share" user db screens running-screens)
      (e/client
       (let [selected-screen (e/watch !selected-screen)
         ;; screen-id (atom "")  ;; Track the current input value
@@ -27,7 +26,6 @@
         ;;                      (swap! screens conj @screen-id)
         ;;                      (reset! screen-id "")))
 ]  ;; Add screen to the list and reset input
-        (prn "screen-id" @!screen-id user)
         (dom/div (dom/props {:class "flex flex-col items-center justify-center bg-gray-100 p-6"})
                  (dom/div (dom/props {:class "max-w-2xl w-full p-8 bg-white rounded-lg shadow-md text-center space-y-8"})
 
@@ -45,17 +43,17 @@
                                    (dom/input (dom/props {:class "border p-2 mr-4 text-gray-700"
                                                           :placeholder "Enter RustDesk screen id"
                                                           :value @!screen-id}))
-                                   (dom/On-all "change" (e/fn [e] (.log js/console e) (reset! !screen-id (.. e -target -value))))
+                                   (dom/On-all "change" (fn [e] (.log js/console e) (reset! !screen-id (.. e -target -value))))
                                    (dom/button (dom/props {:class "bg-blue-500 text-white p-2 rounded"})
-                                               (dom/On-all "click" (e/fn [e]
+                                               (dom/On-all "click" (fn [e]
                                                                  (prn "click" e)
                                                                  (.log js/console e)
-                                                                 (let [screen-id (e/client @!screen-id)]
+                                                                 (let [screen-id @!screen-id #_(e/client @!screen-id)]
                                                                    (if (and (>= (count screen-id) 9)
                                                                             (re-matches #"\d+" screen-id))
                                                                      (do
-                                                                       (e/server (add-screen! user screen-id))
-                                                                       (e/client (reset! !screen-id "")))
+                                                                       #_(e/server (add-screen! user screen-id))
+                                                                       #_(e/client (reset! !screen-id "")))
                                                                      (js/alert "Invalid RustDesk screen id. It has at least 9 numbers.")))))
                                                (dom/text "Add Screen")))
 
@@ -66,26 +64,26 @@
                             (dom/div (dom/props {:class "space-y-4"})
                                      (dom/h3 (dom/props {:class "text-2xl font-semibold text-gray-800"}) (dom/text "Active Screens"))
                                      (dom/ul (dom/props {:class "list-disc pl-6 space-y-2 text-left"})
-                                             (e/for [[screen active] screens]
+                                             (e/for [[screen active] (e/diff-by hash (seq screens))]
                                                (dom/li (dom/props {:class "flex items-center space-x-4"})
                                                        (dom/button (dom/props (merge {:class (str "bg-gray-900 text-gray-700 p-2 rounded "
                                                                                                   (if (contains? running-screens screen)
                                                                                                     "text-red-500" "text-gray-700"))}))
-                                                                   (dom/On-all "click" (e/fn [e]
-                                                                                     (prn "screen" e)
-                                                                                     (reset! !selected-screen screen)))
+                                                                   (dom/On-all "click" (fn [e]
+                                                                                         (prn "screen" e)
+                                                                                         (reset! !selected-screen screen)))
                                                                    (dom/text screen))
                                                     ;; Remove button
                                                        (dom/button (dom/props {:class "bg-red-500 text-white p-2 rounded"})
-                                                                   (dom/On-all "click" (e/fn [e]
-                                                                                     (prn "remove" e)
-                                                                                     (e/server (remove-screen!  screen))))
+                                                                   (dom/On-all "click" (fn [e]
+                                                                                         (prn "remove" e)
+                                                                                         #_(e/server (remove-screen!  screen))))
                                                                    (dom/text "Remove"))
                                                     ;; Activate button
                                                        (dom/button (dom/props {:class "bg-green-500 text-white p-2 rounded"})
-                                                                   (dom/On-all "click" (e/fn [e]
-                                                                                     (prn "de/activate" e)
-                                                                                     (e/server (set-active! screen (not active)))))
+                                                                   (dom/On-all "click" (fn [e]
+                                                                                         (prn "de/activate" e)
+                                                                                         #_(e/server (set-active! screen (not active)))))
                                                                    (if active
                                                                      (dom/text "Deactivate")
                                                                      (dom/text "Activate"))))))))
@@ -105,13 +103,13 @@
                                 (when (seq recordings)
                                   (dom/h4 (dom/props {:class "text-xl font-semibold text-gray-800"}) (dom/text "Recordings"))
                                   (dom/ul (dom/props {:class "list-disc pl-6 space-y-2 text-left"})
-                                          (e/for [rec (seq recordings)]
+                                          (e/for [rec (e/diff-by hash (seq recordings))]
                                             (dom/li (dom/props {})
                                                     (dom/text (e/server (parse-date rec)))
                                                     (dom/button (dom/props {:class "bg-red-500 text-white p-2 rounded"})
-                                                                (dom/On-all "click" (e/fn [e]
+                                                                (dom/On-all "click" (fn [e]
                                                                                   (prn "remove recording" e)
-                                                                                  (e/server (remove-recording! rec))))
+                                                                                  #_(e/server (remove-recording! rec))))
                                                                 (dom/text "Remove"))
                                                     (dom/video (dom/props {:src (str "/videos/" rec) :controls true})))))))))))))))))
 

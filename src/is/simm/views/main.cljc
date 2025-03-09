@@ -19,21 +19,21 @@
                  (dom/div (dom/props {:class "container mx-auto flex justify-between items-center"})
                           (dom/div (dom/props {:class "flex items-center"})
                                    (dom/a (dom/props {:class "text-white text-xl font-bold"})
-                                          (dom/On-all "click" (e/fn [_e] (reset! !view-state :main)))
+                                          (dom/On-all "click" (fn [_e] (reset! !view-state :main)))
                                           (dom/img (dom/props {:src "/simmis.png" :alt "Logo" :class "h-10" :style {:transform (str "rotate(" @!rotation "deg)")}})))
                                    (dom/text "immis"))
                           (dom/nav (dom/props {:class "flex space-x-4"})
                                    (dom/a (dom/props {:class "text-white" :href "#about"})
-                                          (dom/On-all "click" (e/fn [_e] (reset! !view-state :about)))
+                                          (dom/On-all "click" (fn [_e] (reset! !view-state :about)))
                                           (dom/text "About"))
                                    #_(dom/a (dom/props {:class "text-white" :href "#taskmanager"})
-                                            (dom/On-all "click" (e/fn [_e] (reset! !view-state :taskmanager)))
+                                            (dom/On-all "click" (fn [_e] (reset! !view-state :taskmanager)))
                                             (dom/text "Task Manager"))
                                    (dom/a (dom/props {:class "text-white" :href "#screenshare"})
-                                          (dom/On-all "click" (e/fn [_e] (reset! !view-state :screenshare)))
+                                          (dom/On-all "click" (fn [_e] (reset! !view-state :screenshare)))
                                           (dom/text "Screen Share"))
                                    (dom/a (dom/props {:class "text-white" :href "#user"})
-                                          (dom/On-all "click" (e/fn [_e] (js/alert "not implemented")))
+                                          (dom/On-all "click" (fn [_e] (js/alert "not implemented")))
                                           (dom/text user))))))))
 
 
@@ -57,7 +57,7 @@
 
 (e/defn LoginOrSignup []
   (e/client
-   (let [submit-fn (e/fn [e]
+   (let [submit-fn (fn [e]
                      (.preventDefault e)
                      (let [user (.-value (.getElementById js/document "user"))
                            password (.-value (.getElementById js/document "password"))]
@@ -139,7 +139,6 @@
   (let [view-state (e/client (e/watch !view-state))
         ;session-id (e/server (get-in ring-request [:headers "sec-websocket-key"]))
         session (e/server (get-session ring-request))]
-    (prn "session" session)
     (e/client
      (binding [dom/node js/document.body]
        (dom/section (dom/props {:class "flex flex-col min-h-screen"})

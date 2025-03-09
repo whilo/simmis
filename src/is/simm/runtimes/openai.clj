@@ -6,7 +6,7 @@
   (:require [libpython-clj2.require :refer [require-python]]
             [libpython-clj2.python :refer [py. py.. py.-] :as py]
             [com.stuartsierra.component :as component]
-            [is.simm.runtimes.branching :as branching]
+            #_[is.simm.runtimes.branching :as branching]
             [is.simm.languages.gen-ai :as gen-ai]
             [taoensso.timbre :refer [debug warn]]
             [is.simm.config :refer [config]]
@@ -293,7 +293,7 @@
 
     [S peer [next-in out]]))
 
-(defrecord OpenAIRuntime [state]
+#_(defrecord OpenAIRuntime [state]
   component/Lifecycle
   (start [this] this)
   (stop [this] this)
@@ -307,13 +307,13 @@
                                                         :other @(:state other)})))
     (OpenAIRuntime. (atom (merge @(:state this) {:id id})))))
 
-(defn openai-runtime [config]
+#_(defn openai-runtime [config]
   (OpenAIRuntime. (atom (merge {:usage {:last-request-time 0
                                         :num-requests 0}
                                 :credits {:usd-per-month 120}}
                                config))))
 
-(extend-protocol gen-ai/GenAI
+#_(extend-protocol gen-ai/GenAI
   OpenAIRuntime
   (-cheap-llm [this msg]
     (let [{:keys [openai-key]} @(:state this)]

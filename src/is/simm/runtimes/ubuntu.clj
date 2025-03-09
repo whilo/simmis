@@ -1,7 +1,11 @@
 (ns is.simm.runtimes.ubuntu
   "Control an Ubuntu 22.04 desktop machine."
   (:require  [is.simm.runtimes.openai :refer [text-chat chat whisper-1 tts-1]]
+             [is.simm.runtimes.brave :as brave]
+             [is.simm.runtimes.text-extractor :as text-extractor]
              [is.simm.prompts :as prompts]
+             [is.simm.missionary-utils :refer [go->task] :as mu]
+             [is.simm.config :as config]
              [clojure.core.async :refer [timeout put! chan pub sub close! take! poll! go-loop go] :as async]
              [taoensso.timbre :refer [debug info warn error] :as log]
              [missionary.core :as m]
@@ -35,14 +39,8 @@
     (let [file-bytes (.readAllBytes input-stream)]
       (.encodeToString (Base64/getEncoder) file-bytes))))
 
-(defn >! "Puts given value on given channel, returns a task completing with true when put is accepted, of false if port was closed."
-  [c x] (doto (m/dfv) (->> (async/put! c x))))
-
-(defn <! "Takes from given channel, returns a task completing with value when take is accepted, or nil if port was closed."
-  [c] (doto (m/dfv) (->> (async/take! c))))
-
 #_(tests
-   (m/? (<! (whisper-1 "/tmp/microphone.wav"))) := "Hello, 1, 2, 3, 4, 5, 6, 7.")
+   (m/? (<? (whisper-1 "/tmp/microphone.wav"))) := "Hello, 1, 2, 3, 4, 5, 6, 7.")
 
 (defn play-audio [filename]
   (m/via m/blk (shell "cvlc" "--no-loop" "--play-and-exit" filename)))
@@ -55,7 +53,7 @@
 
 (defn vlm
   ([prompt filename]
-   (<! (chat "chatgpt-4o-latest" #_"gpt-4o"
+   (go->task (chat "chatgpt-4o-latest" #_"gpt-4o"
              [{:role "user" :content
                [{:type "text"
                  :text prompt}
@@ -68,7 +66,7 @@
                         (str/join "\n" (take-last 100 audio-out))
                         (str/join "\n" (take-last 100 action-out)))]
      #_(debug "PROMPT" prompt)
-     (<! (chat "chatgpt-4o-latest" #_"gpt-4o"
+     (go->task (chat "chatgpt-4o-latest" #_"gpt-4o"
                [{:role "user" :content
                  [{:type "text" :text prompt}
                   {:type "image_url"
@@ -81,7 +79,7 @@
                        (str/join "\n" (take-last 100 audio-out))
                        (str/join "\n" (take-last 100 action-out)))]
     #_(println prompt)
-    (<! (chat "chatgpt-4o-latest" #_"gpt-4o"
+    (go->task (chat "chatgpt-4o-latest" #_"gpt-4o"
               [{:role "user" :content
                 [{:type "text" :text prompt}]}]))))
 
@@ -110,10 +108,7 @@
      (m/? (m/via m/blk (shell "ffmpeg" "-f" "pulse" "-i" device "-t" (str interval) filename)))
      filename)))
 
-(def audio-devices
-  {:microphone "alsa_input.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp_6__source"
-   :speakers "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__hw_sofhdadsp__sink.monitor"
-   #_"bluez_sink.F8_DF_15_4F_1D_F0.a2dp_sink.monitor"})
+(def audio-devices (:audio config/config))
 
 (comment
 
@@ -121,7 +116,7 @@
 
   (def whisper-test (whisper-1 "/tmp/microphone.wav"))
 
-  (def tts-test (m/? (<! (tts-1 "Hello, I am a computer."))))
+  (def tts-test (m/? (go->task (tts-1 "Hello, I am a computer."))))
 
   (shell "vlc" tts-test))
 
@@ -145,12 +140,17 @@
     (m/reduce (fn [_ f]
                 (when f
                   (debug "audio: " f)
-                  (let [text (m/? (<! (whisper-1 f)))
-                        text (if (or (.contains text "for watching")
-                                     (.contains text "Thank you")) "" text)]
-                    (debug "audio text: " text)
-                    (cb text)
-                    nil)))
+                  (try
+                    (let [text (m/? (go->task (whisper-1 f)))
+                          text (if (or (.contains text "for watching")
+                                       (.contains text "Thank you")
+                                       (= text "you"))
+                                 "" text)]
+                      (debug "audio text: " text)
+                      (cb text)
+                      nil)
+                    (catch Exception e
+                      (error "Cannot transcribe audio:" e f)))))
               nil <x)))
 
 
@@ -345,6 +345,7 @@
              {:db/ident :event/role
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
+
              {:db/ident :audio/in
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
@@ -354,12 +355,31 @@
              {:db/ident :audio/device
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
+
              {:db/ident :screen/file
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
              {:db/ident :screen/transcript
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}
+
+             {:db/ident :youtube/transcript
+              :db/valueType :db.type/string
+              :db/cardinality :db.cardinality/one}
+             {:db/ident :youtube/summary
+              :db/valueType :db.type/string
+              :db/cardinality :db.cardinality/one}
+             {:db/ident :youtube/id
+              :db/valueType :db.type/string
+              :db/unique :db.unique/identity
+              :db/cardinality :db.cardinality/one}
+             {:db/ident :youtube/title
+              :db/valueType :db.type/string
+              :db/cardinality :db.cardinality/one}
+             {:db/ident :youtube/description
+              :db/valueType :db.type/string
+              :db/cardinality :db.cardinality/one}
+
              {:db/ident :assistant/output
               :db/valueType :db.type/string
               :db/cardinality :db.cardinality/one}])
@@ -409,16 +429,17 @@
                assistant-output (get event :assistant/output)
                screen-file (get event :screen/file)
                screen-transcript (get event :screen/transcript)
+               youtube-summary (get event :youtube/summary)
                action (get event :action)
                created (get event :event/created)]
            (cond
              (and role audio-in)
              {:role role
-              :content [{:type "text" :text (str created " audio-in: " audio-in)}]}
+              :content [{:type "text" :text (str created " audio-in (microphone): " audio-in)}]}
 
              (and role audio-out)
              {:role role
-              :content [{:type "text" :text (str created " audio-out: " audio-out)}]}
+              :content [{:type "text" :text (str created " audio-out (speaker): " audio-out)}]}
 
              (and role assistant-output)
              {:role role
@@ -428,9 +449,13 @@
              {:role role
               :content [{:type "text" :text (str created " screen-transcript: " screen-transcript)}]}
 
+             (and role youtube-summary)
+             {:role role
+              :content [{:type "text" :text (str created " youtube-summary: " youtube-summary)}]}
+
              :else (do (error "missing event" event)
                        {:role role :content
-                        [{:type "text" :text "Missing event."}]}) 
+                        [{:type "text" :text "Missing event."}]})
 
              #_(and role screen-file)
              #_{:role role
@@ -439,8 +464,63 @@
        events))
 
 
+;; a function that translates
+;; https://www.youtube.com/watch?v=KHxZ3mT9BSo -> KHxZ3mT9BSo
+(defn youtube-id [url]
+  (str/replace url "https://www.youtube.com/watch?v=" ""))
+
+(tests
+ (youtube-id "https://www.youtube.com/watch?v=KHxZ3mT9BSo") := "KHxZ3mT9BSo")
+
+(defn retrieve-youtube-transcript [conn title]
+  (let [url (->> (brave/search-brave title)
+                 :web
+                 :results
+                 (filter #(.startsWith (:url %) "https://www.youtube.com/watch?v="))
+                 first
+                 :url)
+        id (when url (youtube-id url))]
+    (debug "Youtube id:" id)
+    (m/sp
+     (when id
+       (when-not (d/entity @conn [:youtube/id id])
+         (try
+           (let [_ (debug "extracting youtube transcript" id)
+                 {:keys [title description transcript]} (m/? (text-extractor/youtube-transcript id))
+                 _ (debug "youtube transcript" (subs transcript 0 100))
+                 summary (m/? (go->task (chat "gpt-4o-mini"
+                                              (vec [{:role "developer" :content
+                                                     [{:type "text" :text "Summarize the following YouTube transcript comprehensively and use Wikilinks, e.g. [[New York]] or [[New York City][New York]] to refer to entities, events and important topics:"}
+                                                      {:type "text" :text (str title "\n" description "\n" transcript)}]}]))))
+                 _ (debug "youtube summary" summary)
+                 _ (d/transact! conn [{:youtube/transcript transcript
+                                       :youtube/title title
+                                       :youtube/description description
+                                       :youtube/summary summary
+                                       :youtube/id id
+                                       :event/created (java.util.Date.)
+                                       :event/role "developer"}])])
+           (catch Exception e
+             (debug "Could not extract youtube transcript" id e))))))))
+
+(comment
+
+  (m/? (retrieve-youtube-transcript nil))
+
+  (m/? (text-extractor/youtube-transcript "KDorKy-13ak"))
+
+
+  (m/? (text-extractor/youtube-transcript "1EfpN08mh9I"))
+
+  )
+
+
 (s/def ::actions (s/coll-of (s/or :statement (s/keys :req-un [::action ::text]
                                                      :opt-un [::duration])
+                                  :retrieve-youtube-transcript (s/keys :req-un [::action ::title])
+                                  :inner-monologue (s/keys :req-un [::action ::text])
+                                  :retrieve-notes (s/keys :req-un [::titles])
+                                  :predict-next-actions (s/keys :req-un [::next-actions])
                                   :press-keys (s/keys :req-un [::action ::keys])
                                   :mouse-move (s/keys :req-un [::action ::relative])
                                   :mouse-click (s/keys :req-un [::action ::button]
@@ -448,82 +528,97 @@
 
 (s/def ::action string?)
 (s/def ::text string?)
+(s/def ::title string?)
 (s/def ::keys (s/coll-of string?))
 (s/def ::duration pos?)
 (s/def ::button string?)
 (s/def ::relative (s/tuple number? number?))
+(s/def ::next-actions (s/coll-of any?))
+(s/def ::titles (s/coll-of string?))
 
 (defn parse-json [input default]
   (try
-    (let [p (second (.split input "```json"))
-          p (first (.split p "```"))
+    (let [p (if (.contains input "```json")
+              (first (.split (second (.split input "```json")) "```"))
+              input)
           p (json/read-str p :key-fn keyword)]
       (if (s/valid? ::actions p)
-        p default))
+        p
+        (do (warn "Could not validate:" p (s/explain ::actions p)) 
+            default)))
     (catch Exception _ default)))
 
 (defn baseline-0 [conn]
-  (m/race (audio-listen (:microphone audio-devices)
-                        10
-                        #(d/transact! conn [{:audio/in %
-                                             :audio/device (:microphone audio-devices)
+  (mu/fastest (audio-listen (:microphone audio-devices)
+                            5
+                            #(d/transact! conn [{:audio/in %
+                                                 :audio/device (:microphone audio-devices)
+                                                 :event/created (java.util.Date.)
+                                                 :event/role "user"}]))
+
+              (audio-listen (:speakers audio-devices)
+                            5
+                            #(d/transact! conn [{:audio/out %
+                                                 :audio/device (:speakers audio-devices)
+                                                 :event/created (java.util.Date.)
+                                                 :event/role "developer"}]))
+
+              #_(screen-watch 10
+                            #(d/transact! conn [{:screen/file %1
+                                                 :screen/transcript %2
+                                                 :event/created (java.util.Date.)
+                                                 :event/role "user"}]))
+
+              (m/sp
+               (loop []
+                 (debug "talk loop")
+                 (let [user "Christian"
+                       system-prompt (format (slurp (io/resource "prompts/screen.txt")) user)
+                       #_#_last-screen (->> @conn
+                                            (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
+                                            (sort-by second)
+                                            reverse
+                                            first ;; newest
+                                            first)
+                       last-screen (str "/tmp/screenshot-" (rand-int 1000000) ".png")
+                       _  (m/? (screenshot last-screen))
+                       messages (->> @conn
+                                     (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
+                                     (map first)
+                                     (sort-by :event/created)
+                                     events->openai-messages)]
+                   (debug "last-screen" last-screen)
+                   #_(debug "messages" messages)
+
+                   (if (and (seq messages) last-screen) #_last-screen
+                       (let [output (m/? (go->task (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
+                                                         (vec (concat [{:role "developer" :content
+                                                                        [{:type "text" :text system-prompt}]}]
+                                                                      messages
+                                                                      [{:role "user" :content
+                                                                        [{:type "text" :text "Current screenshot:"}
+                                                                         {:type "image_url"
+                                                                          :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))
+                             _ (debug "system output" output)
+                             actions (parse-json output [])]
+                         (debug "parsed" actions)
+                         (d/transact! conn [{:assistant/output output
                                              :event/created (java.util.Date.)
-                                             :event/role "user"}]))
-
-          (audio-listen (:speakers audio-devices)
-                        10
-                        #(d/transact! conn [{:audio/out %
-                                             :audio/device (:speakers audio-devices)
-                                             :event/created (java.util.Date.)
-                                             :event/role "developer"}]))
-
-          (screen-watch 10
-                        #(d/transact! conn [{:screen/file %1
-                                             :screen/transcript %2
-                                             :event/created (java.util.Date.)
-                                             :event/role "user"}]))
-
-          (m/sp
-           (loop []
-             (debug "talk loop")
-             (let [system-prompt (slurp (io/resource "prompts/screen.txt"))
-                   last-screen (->> @conn
-                                    (d/q '[:find ?s ?c :where [?e :screen/file ?s] [?e :event/created ?c]])
-                                    (sort-by second)
-                                    reverse
-                                    first ;; newest
-                                    first)
-                   messages (->> @conn
-                                 (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
-                                 (map first)
-                                 (sort-by :event/created)
-                                 events->openai-messages)]
-               (debug "last-screen" last-screen)
-               (debug "messages" messages)
-
-               (if (and (seq messages) last-screen) #_last-screen
-                   (let [output (m/? (<! (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
-                                               (vec (concat [{:role "developer" :content
-                                                              [{:type "text" :text system-prompt}]}]
-                                                            messages
-                                                            [{:role "user" :content
-                                                              [{:type "text" :text "Current screenshot:"}
-                                                               {:type "image_url"
-                                                                :image_url {:url (str "data:image/jpeg;base64," (encode-file last-screen))}}]}])))))
-                         _ (debug "system output" output)
-                         actions (parse-json output {})]
-                     (d/transact! conn [{:assistant/output output
-                                         :event/created (java.util.Date.)
-                                         :event/role "developer"}])
-                     (doseq [{:keys [action keys duration button relative text] :as args} actions]
-                       (case action
-                         "statement" (m/? (play-audio (m/? (<! (tts-1 text)))))
-                         "press-keys" (press-keys (map keyword keys) duration)
-                         "mouse-move" (mouse-move relative)
-                         "mouse-click" (mouse-click (keyword button) duration)
-                         (prn "Not supported yet" action args))))
-                   (m/? (m/sleep 1000))))
-             (recur)))))
+                                             :event/role "developer"}])
+                         (doseq [{:keys [action keys duration button relative text title] :as args} actions]
+                           (try
+                             (case action
+                               "statement" (m/? (play-audio (m/? (go->task (tts-1 text)))))
+                               "press-keys" (press-keys (map keyword keys) duration)
+                               "mouse-move" (mouse-move relative)
+                               "mouse-click" (mouse-click (keyword button) duration)
+                               "retrieve-youtube-transcript" (m/? (retrieve-youtube-transcript conn title))
+                               (warn "Not supported yet" action args))
+                             (catch Exception e
+                               (error "Executing action: " e args))))
+                         (m/? (m/sleep 5000)))
+                       (m/? (m/sleep 1000))))
+                 (recur)))))
 
 (comment
 
@@ -557,8 +652,9 @@
      #(prn ::error %)))
 
   (baseline-0-dispose)
+
   
-  
+
   )
 
 
@@ -604,7 +700,7 @@
                (debug "messages" messages)
 
                (if (and (seq messages) last-screen) #_last-screen
-                   (let [output (m/? (<! (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
+                   (let [output (m/? (go->task (chat #_"gpt-4o-mini" "chatgpt-4o-latest"
                                                (vec (concat [{:role "developer" :content
                                                               [{:type "text" :text system-prompt}]}]
                                                             messages
@@ -620,7 +716,7 @@
                                          :event/role "developer"}])
                      (doseq [{:keys [action keys duration button relative text]} actions]
                        (case action
-                         "statement" (m/? (play-audio (m/? (<! (tts-1 text)))))
+                         "statement" (m/? (play-audio (m/? (go->task (tts-1 text)))))
                          "press-keys" (press-keys (map keyword keys) duration)
                          "mouse-move" (mouse-move relative)
                          "mouse-click" (mouse-click (keyword button) duration))))
@@ -658,9 +754,6 @@
   
   
   )
-
-(defn fastest [& args]
-  (m/absolve (apply m/race (map m/attempt args))))
 
 
 (defn -main [& _args]

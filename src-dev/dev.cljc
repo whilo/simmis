@@ -31,9 +31,9 @@
        (comment (shadow-server/stop!))
 
        (def server (jetty/start-server!
-                     (fn [ring-request]
-                       (e/boot-server {} is.simm.views.main/Main (e/server ring-request)))
-                     config))
+                    (fn [ring-request]
+                      (e/boot-server {} is.simm.views.main/Main (e/server ring-request)))
+                    config))
        (comment
          (.stop server) ; jetty
          (server)       ; httpkit
@@ -45,9 +45,9 @@
      (defonce reactor nil)
 
      (defn ^:dev/after-load ^:export start! []
-       (set! reactor ((e/boot-client {} is.simm.views.main/Main (e/server nil))
-                       #(js/console.log "Reactor success:" %)
-                       #(js/console.error "Reactor failure:" %))))
+       (set! reactor ((e/boot-client {} is.simm.views.main/Main (e/server (e/amb)))
+                      #(js/console.log "Reactor success:" %)
+                      #(js/console.error "Reactor failure:" %))))
 
      (defn ^:dev/before-load stop! []
        (when reactor (reactor)) ; stop the reactor

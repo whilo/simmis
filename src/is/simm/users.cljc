@@ -107,6 +107,16 @@
          [?e :user ?user]]
        @session-conn "5c5a3c93-8d2e-4c1d-85ab-c786cc40e546")
 
+
+  (d/q '[:find ?user ?session-id
+         :in $
+         :where
+         [?e :session-id ?session-id]
+         [?e :user ?user]]
+       @session-conn)
+
+  @user-conn
+
   ;; add a demo user
   (add-user! user-conn "tester" "tester@mail.com" "123" "admin"))
 
@@ -128,3 +138,13 @@
             (when session-id
               (add-session! session-conn session-id username))
             session-id))) 
+
+
+(comment
+
+  (d/q '[:find (pull ?e [:*]) .
+         :in $
+         :where
+         [?e :user ?username]
+         [?e :password ?password]]
+       @user-conn))

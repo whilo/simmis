@@ -8,17 +8,18 @@
             [is.simm.languages.browser :refer [extract-body]]
             [is.simm.prompts :as pr]
             [superv.async :refer [<?? go-try S go-loop-try <? >? put? go-for] :as sasync]
-            [clojure.core.async :refer [chan pub sub mult tap timeout] :as async]
+            [clojure.core.async :refer [chan pub sub mult tap] :as async]
             [taoensso.timbre :refer [debug info warn error]]
             [hasch.core :refer [uuid]]
             [clojure.string :as str]
-            #_[libpython-clj2.require :refer [require-python]]
-            #_[libpython-clj2.python :refer [py. py.. py.-] :as py]
-            
+
+            [missionary.core :as m]
+            [is.simm.missionary-utils :as mu]
             [babashka.http-client :as http]
             [clojure.data.json :as json]
-            [clojure.string :as str]
-            ))
+
+            [hickory.core :as hic]
+            [hickory.select :as s]))
 
 (def watch-url "https://www.youtube.com/watch?v=")
 
@@ -26,16 +27,19 @@
   (let [status (:status response)]
     (if (= 200 status)
       (:body response)
-      (throw (ex-info (str "YouTube request failed for video: " video-id)
-                      {:status status
-                       :video-id video-id})))))
+      (ex-info (str "YouTube request failed for video: " video-id)
+               {:status status
+                :video-id video-id}))))
 
 (defn fetch-video-html [client video-id]
-  (let [response @(http/get (str watch-url video-id) {:headers {"Accept-Language" "en-US"} :client client :async true})]
-    (raise-http-errors response video-id)))
+  (m/sp
+   (-> (http/get (str watch-url video-id) {:headers {"Accept-Language" "en-US"} :client client :async true})
+       mu/cf->task
+       m/?
+       (raise-http-errors video-id))))
 
 (defn extract-captions-json [html video-id]
-  (if-not (re-find #"\"captions\":" html)
+  (when-not (re-find #"\"captions\":" html)
     (throw (ex-info "Transcripts are not found for this video" {:video-id video-id})))
 
   (let [captions-data (-> (str/split html #"\"captions\":")
@@ -50,64 +54,98 @@
         (throw (ex-info "No transcript available for this video" {:video-id video-id})))
       (throw (ex-info "Transcripts are disabled for this video" {:video-id video-id})))))
 
-(defn fetch-transcript [client video-id]
-  (let [html (fetch-video-html client video-id)
-        captions-json (extract-captions-json html video-id)]
-    (for [caption (:captionTracks captions-json)]
-      {:language (:languageCode caption)
-       :url (:baseUrl caption)})))
+(defn fetch-transcript [html video-id]
+  (m/sp
+   (let [captions-json (extract-captions-json html video-id)]
+     (for [caption (:captionTracks captions-json)]
+       {:language (:languageCode caption)
+        :url (:baseUrl caption)}))))
 
 (defn fetch-transcript-data [client transcript-url]
-  (let [response @(http/get transcript-url {:headers {"Accept-Language" "en-US"} :client client :async true})]
-    (->> (json/read-str (:body (raise-http-errors response transcript-url))
-                        :key-fn keyword)
-         :events
-         (map #(select-keys % [:segs :tOffsetMs :dDurationMs])))))
+  (m/sp
+   (let [response (m/? (mu/cf->task (http/get transcript-url {:headers {"Accept-Language" "en-US"} :client client :async true})))]
+     (->> (json/read-str (:body (raise-http-errors response transcript-url))
+                         :key-fn keyword)
+          :events
+          (map #(select-keys % [:segs :tOffsetMs :dDurationMs]))))))
 
-(def client (http/client (assoc-in http/default-client-opts [:proxy] {:host "localhost" :port 8118})))
+(def client (http/client http/default-client-opts #_(assoc-in http/default-client-opts [:proxy] {:host "localhost" :port 8118})))
 
-;; Example usage with async:
+(defn extract-video-metadata [html video-id]
+  (try
+    (let [parsed (-> html hic/parse hic/as-hickory)]
+      {:title (->> parsed
+                 (s/select (s/tag "title"))
+                 first
+                 :content
+                 first)
+       :description (->> parsed
+                        (s/select (s/and (s/tag "meta")
+                                        (s/attr :name #(= % "description"))))
+                        first
+                        :attrs
+                        :content)
+       :video-id video-id})
+    (catch Exception e
+      (warn "Failed to extract video metadata" e)
+      {:title "Unknown title"
+       :description "Could not extract description"
+       :video-id video-id})))
 
-
-(defn youtube-transcript [video-id]
-  (-> (fetch-transcript client video-id)
-      first
-      :url
-      (http/get {:client client})
-      :body
-      (str/replace #"<[^>]*>" " ")))
-
-
-#_(require-python '[youtube_transcript_api :refer [YouTubeTranscriptApi]])
-
-#_(defn youtube-transcript [video-id]
-  ;; " ".join([t['text'] for t in transcript])
-  (let [transcript (py. YouTubeTranscriptApi get_transcript video-id)]
-    (str/join " " (map :text transcript))))
+(defn youtube-transcript 
+  "Fetches YouTube video metadata (title, description) and transcript if available.
+   Returns a map containing :title, :description, :video-id, and :transcript (if available)"
+  [video-id]
+  (m/sp
+   (let [html (m/? (fetch-video-html client video-id))
+         metadata (extract-video-metadata html video-id)]
+     (try
+       (let [transcript-data (m/? (fetch-transcript html video-id))
+             transcript (-> transcript-data
+                           first
+                           :url
+                           (http/get {:client client :async true})
+                           mu/cf->task
+                           m/?
+                           :body
+                           (str/replace #"<[^>]*>" " "))]
+         (assoc metadata :transcript transcript))
+       (catch Exception e
+         (warn "Could not extract transcript from YouTube video" video-id e)
+         metadata)))))
 
 (comment
-  (fetch-transcript client "20TAkcy3aBY")
+  (m/? (fetch-transcript client "20TAkcy3aBY"))
 
-  (youtube-transcript "wkH1dpr-p_4")
+  (m/? (youtube-transcript "wkH1dpr-p_4"))
 
   )
 
 (defn extract-url [S text chat]
   (go-try S
-          (if-let [;; if text matches http or https web URL extrect URL with regex
+          (if-let [;; if text matches http or https web URL extract URL with regex
                    url (if text (re-find #"https?://\S+" text) "")]
             (if-let [;; extract youtube video id from URL
                      youtube-id (second (or (re-find #"youtube.com/watch\?v=([^&]+)" url)
                                             (re-find #"youtu.be/([^\?]+)" url)))]
               (try
                 (debug "summarizing youtube transcript" youtube-id)
-                (let [transcript (youtube-transcript youtube-id)
-                      summary (<? S (cheap-llm (format pr/summarization transcript)))
-                      summary (str "Youtube transcript summary:\n" summary "\n" url)]
-                  (<? S (send-text! (:id chat) summary))
-                  summary)
+                (let [video-info (m/? (youtube-transcript youtube-id))
+                      title (:title video-info)
+                      description (:description video-info)
+                      transcript (:transcript video-info)
+                      response (str "YouTube Video: " title "\n\n"
+                                   "Description: " description "\n\n")]
+                  (if transcript
+                    (let [summary (<? S (cheap-llm (format pr/summarization transcript)))
+                          response (str response "Transcript summary:\n" summary)]
+                      (<? S (send-text! (:id chat) response))
+                      (str response "\n" url))
+                    (let [response (str response "No transcript available for this video.")]
+                      (<? S (send-text! (:id chat) response))
+                      (str response "\n" url))))
                 (catch Exception e
-                  (warn "Could not extract transcript from youtube video" youtube-id e)
+                  (warn "Could not extract information from youtube video" youtube-id e)
                   text))
               (try
                 (let [body (<? S (extract-body url))
