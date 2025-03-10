@@ -65,32 +65,11 @@
    (let [submit-fn (fn [e]
                      (.preventDefault e)
                      (let [user (.-value (.getElementById js/document "user"))
-                           password (.-value (.getElementById js/document "password"))]
-                       #_(if (CheckLogin?. user password)
-                           (do
-                             (reset! !user {:user user :password password})
-                             (reset! !view-state :main))
-                           (do
-                             (reset! !user nil)
-                             (js/alert "Invalid username or password.")))))]
+                           password (.-value (.getElementById js/document "password"))]))]
      (dom/div (dom/props {:class "flex flex-col items-center justify-center"})
               (dom/a (dom/props {:class "bg-blue-500 text-white font-bold rounded"
                                  ::dom/href "/auth"}) (dom/text "Login")))
-     #_(dom/div (dom/props {:class "flex flex-col items-center justify-center"})
-              (dom/div (dom/props {:class "w-full max-w-md"})
-                       (dom/h1 (dom/props {:class "text-3xl font-bold mb-6"}) (dom/text "Signup"))
-                       (dom/form (dom/props {:class "bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4"})))
-              (dom/On-all "submit" submit-fn)
-              (dom/div (dom/props {:class "mb-4"})
-                       (dom/label (dom/props {:class "block text-gray-700 text-sm font-bold mb-2"} (dom/text "Username")))
-                       (dom/input (dom/props {:id "user" :class "shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" :type "text" :placeholder "Username"})))
-              (dom/div (dom/props {:class "mb-6"})
-                       (dom/label (dom/props {:class "block text-gray-700 text-sm font-bold mb-2"} (dom/text "Password")))
-                       (dom/input (dom/props {:id "password" :class "shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline" :type "password" :placeholder "Password"})))
-              (dom/div (dom/props {:class "flex items-center justify-between"})
-                       (dom/button (dom/props {:class "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" :type "submit"})
-                                   (dom/On-all "click" submit-fn)
-                                   (dom/text "Login")))))))
+     )))
 
 #?(:cljs (def !assistant-on (atom false)))
 
@@ -98,9 +77,6 @@
 
 (comment
   (@!assistant-task)
-
-
-  ;; use instant instead
   
   )
 
@@ -215,35 +191,11 @@
                    (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
                    (map first)
                    (sort-by :event/created)
-                   (take 1000)
-                   reverse)]
+                   reverse
+                   (take 1000))]
      (e/client
       (let [assistant-on (e/watch !assistant-on)]
         (dom/section (dom/props {:class "flex items-center justify-center p-6"})
-                     #_(dom/div (dom/props {:class "max-w-4xl w-full p-4 bg-gray-100 rounded-lg space-y-4"})
-                                (dom/h1 (dom/props {:class "text-2xl font-bold text-gray-800"})
-                                        (dom/text "Assistance"))
-                                (when-some [t (dom/button (dom/text (if assistant-on "off" "on"))
-                                                          (let [res (dom/On "click"
-                                                                            (fn [e]
-                                                                              (prn "assist" e)
-                                                                              (swap! !assistant-on not))
-                                                                            nil)
-                                                                [t err] (e/Token res)]
-                                                            (dom/props {:class "bg-blue-500 text-white p-2 rounded"})
-                                                            t))]
-                                  (let [res (e/server
-                                             (if-not assistant-on
-                                               (do
-                                                 (swap! !assistant-task (fn [task]
-                                                                          #_(assert (nil? task) "Task is not nil.")
-                                                                          (let [a (assist default-assist-config)]
-                                                                            (a #(prn ::output %) #(prn ::error %))))) nil)
-                                               (swap! !assistant-task (fn [dispose!] (when dispose! (dispose!)) nil))))]
-                                    (prn res)
-                                    (t)))
-                                (e/for [event (e/diff-by hash msgs)]
-                                  (AssistantEvent event)))
                      (dom/div (dom/props {:class "max-w-4xl w-full p-4 bg-gray-100 rounded-lg space-y-4"})
 
                               ;; Compact header with toggle switch
