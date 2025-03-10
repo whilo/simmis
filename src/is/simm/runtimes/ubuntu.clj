@@ -103,7 +103,7 @@
 (defn listen-to-device [device interval]
   (m/sp
    (let [;; random file name 
-         filename (str "/tmp/speakers-" (rand-int 1000000) ".mp3")]
+         filename (str "/tmp/speakers-" (java.util.UUID/randomUUID) ".mp3")]
      (m/? (m/via m/blk (shell "ffmpeg" "-f" "pulse" "-i" device "-t" (str interval) filename)))
      filename)))
 
@@ -158,7 +158,7 @@
   []
   (m/ap
    (loop []
-     (let [filename (str "/tmp/screenshot-" (rand-int 1000000) ".png")
+     (let [filename (str "/tmp/screenshot-" (java.util.UUID/randomUUID) ".png")
            _  (m/? (screenshot filename))]
        (m/amb filename (recur))))))
 
@@ -589,7 +589,7 @@
                                               reverse
                                               first ;; newest
                                               first)
-                         last-screen (str "resources/public/electric_starter_app/tmp/screenshot-" (rand-int 1000000) ".png")
+                         last-screen (str "resources/public/electric_starter_app/tmp/screenshot-" (java.util.UUID/randomUUID) ".png")
                          _ (m/? (screenshot last-screen))
                          _ (d/transact! conn [{:screen/file last-screen
                                                :event/type ::screenshot
@@ -647,11 +647,11 @@
   (log/set-min-level! :debug)
 
 
-  (def cfg (d/create-database (:db default-assist-config)))
+  (def cfg (d/create-database (:db plaicraft-assist-config)))
 
-  (d/delete-database (:db default-assist-config))
+  (d/delete-database (:db plaicraft-assist-config))
 
-  (def conn (d/connect (:db default-assist-config)))
+  (def conn (d/connect (:db plaicraft-assist-config)))
 
   (d/transact conn schema)
 
@@ -674,16 +674,24 @@
 
   )
 
+(def plaicraft-assist-config {:user "Jesse"
+                              :system-prompt (slurp (io/resource "prompts/plaicraft-short.txt"))
+                              :audio {:devices {:microphone (:microphone audio-devices)
+                                                :speakers (:speakers audio-devices)}
+                                      :in-interval 5
+                                      :out-interval 5}
+                              :db {:store {:backend :file :path "/tmp/assist-plaicraft"}}})
+
 
 (defn -main [& _args]
-  (let [db-config (:db default-assist-config)]
+  (let [db-config (:db plaicraft-assist-config)]
     (try
       (-> (d/create-database db-config)
           d/connect
           (d/transact schema))
       (catch Exception e
         (debug "Database not created." e)))
-    (let [assist-test (assist default-assist-config)]
+    (let [assist-test (assist plaicraft-assist-config)]
       (let [assist-dispose
             (assist-test
              #(prn ::success %)
@@ -691,3 +699,9 @@
              ;; sleep forever
         (async/<!! (chan))
         (assist-dispose)))))
+
+(comment
+
+  (-main)
+
+  )

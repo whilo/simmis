@@ -1,7 +1,8 @@
 (ns is.simm.views.main
   (:require  [is.simm.views.tasks :refer [TaskManager]]
              [is.simm.simulations.screenshare.view :refer [ScreenShare]]
-             #?(:clj [is.simm.runtimes.ubuntu :refer [assist default-assist-config]])
+             [markdown.core :refer [md-to-html-string]]
+             #?(:clj [is.simm.runtimes.ubuntu :refer [assist default-assist-config plaicraft-assist-config]])
              #?(:clj [is.simm.users :refer [get-session add-session! update-session! delete-session! get-user]])
              [hyperfiddle.electric3 :as e]
              [hyperfiddle.electric-dom3 :as dom]
@@ -80,6 +81,10 @@
   
   )
 
+(e/defn Markdown [?md-str]
+  (e/client
+   (let [html (e/server (some-> ?md-str md-to-html-string))]
+     (set! (.-innerHTML dom/node) html))))
 
 (e/defn AssistantEvent [event]
   (e/client
@@ -131,7 +136,9 @@
                                            (dom/h3 (dom/props {:class "font-semibold text-sm text-purple-700"}) 
                                                    (dom/text (str (if role (str "[" role "] ") "") "Assistant Output")))
                                            (dom/span (dom/props {:class "text-xs text-gray-500"}) (dom/text timestamp)))
-                                  (dom/p (dom/props {:class "mt-1 text-gray-800 whitespace-pre-wrap"}) (dom/text assistant-output)))))
+                                  (dom/p (dom/props {:class "mt-1 text-gray-800 whitespace-pre-wrap"}) 
+                                         #_(dom/text assistant-output)
+                                         (Markdown assistant-output)))))
 
        :is.simm.runtimes.ubuntu/screen-transcript
        (dom/div (dom/props {:class "max-w-4xl w-full p-4 mb-3 bg-amber-50 border-l-4 border-amber-500 rounded-lg shadow-sm"})
@@ -184,9 +191,12 @@
                                          (dom/text (str (when action (str "Action: " action))))))))))))
 
 
-(e/defn Assist [session]
+#?(:cljs (def !user-input (atom "")))
+#?(:cljs (def !submitting (atom false)))
+
+(e/defn Assist [config _session]
   (e/server
-   (let [db (e/watch (d/connect (:db default-assist-config)))
+   (let [db (e/watch (d/connect (:db config)))
          msgs (->> db
                    (d/q '[:find (pull ?e [:*]) :where [?e :event/created ?c]])
                    (map first)
@@ -202,7 +212,7 @@
                               (dom/div (dom/props {:class "flex justify-between items-center border-b border-gray-200 pb-3 mb-2"})
                                        ;; Left side: Title
                                        (dom/h1 (dom/props {:class "text-2xl font-bold text-gray-800"})
-                                               (dom/text "Assistant Event Log"))
+                                               (dom/text "Assistant"))
 
                                        ;; Right side: Toggle switch with status indicator
                                        (dom/div (dom/props {:class "flex items-center gap-2"})
@@ -237,7 +247,7 @@
                                                                      (do
                                                                        (swap! !assistant-task (fn [task]
                                                                                                 #_(assert (nil? task) "Task is not nil.")
-                                                                                                (let [a (assist default-assist-config)]
+                                                                                                (let [a (assist config)]
                                                                                                   (a #(prn ::output %) #(prn ::error %)))))
                                                                        nil)
                                                                      (swap! !assistant-task (fn [dispose!]
@@ -245,6 +255,52 @@
                                                                                               nil))))]
                                                     (prn res)
                                                     (t)))))
+
+                                       ;; ChatGPT-like input box
+                                       (dom/div (dom/props {:class "border-t border-gray-200 pt-4"})
+                                                (dom/form
+                                                 (dom/props {:class "flex flex-col gap-2"})
+                                                 (dom/div (dom/props {:class "relative flex items-center"})
+                                                 ;; Text input
+                                                          (dom/textarea
+                                                           (dom/props {:class "w-full p-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                                                                       :rows "3"
+                                                                       :placeholder "(WIP) Ask a question or enter a command..."
+                                                                       :disabled (not assistant-on)
+                                                                       :value (e/watch !user-input)})
+                                                           #_(dom/on "input" (fn [e] (reset! !user-input (.. e -target -value)))))
+
+                                                 ;; Submit button
+                                                          (dom/button
+                                                           (dom/props {:class (str "absolute right-2 bottom-2 p-2 rounded-full "
+                                                                                   (if (and assistant-on (not (empty? (e/watch !user-input))) (not (e/watch !submitting)))
+                                                                                     "bg-blue-500 text-white hover:bg-blue-600"
+                                                                                     "bg-gray-200 text-gray-400 cursor-not-allowed"))
+                                                                       :type "submit"
+                                                                       :disabled (or (not assistant-on)
+                                                                                     (empty? (e/watch !user-input))
+                                                                                     (e/watch !submitting))})
+                                                           #_(dom/svg (dom/props {:xmlns "http://www.w3.org/2000/svg"
+                                                                                :class "h-5 w-5"
+                                                                                :viewBox "0 0 20 20"
+                                                                                :fill "currentColor"})
+                                                                    (dom/props {:d "M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"}))
+                                                           #_(dom/on "click"
+                                                                   (fn [e]
+                                                                     (.preventDefault e)
+                                                                     (.stopPropagation e)
+                                                                     (let [input-text (e/watch !user-input)]
+                                                                       (when (and assistant-on (not (empty? input-text)))
+                                                                         (reset! !submitting true)
+                                                                         (reset! !user-input "")
+                                                                ;; Send the user input to the server
+                                                                         (e/server
+                                                                          (let [event-data {:event/type :is.simm.runtimes.ubuntu/audio-in
+                                                                                            :audio/in input-text
+                                                                                            :event/created (java.util.Date.)}
+                                                                                db-conn (d/connect (:db config))]
+                                                                            (d/transact db-conn [event-data])))
+                                                                         (js/setTimeout #(reset! !submitting false) 500)))))))))
 
                               ;; Status message when no events
                               (when (empty? msgs)
@@ -320,7 +376,7 @@
                       (dom/div (dom/props {:class "flex-grow"})
                                (case view-state
                                  :main (ScreenShare session)
-                                 :assist (Assist session)
+                                 :assist (Assist plaicraft-assist-config session)
                                  :screenshare (ScreenShare session)
                                  ;:taskmanager (TaskManager.)
                                  ;:login (Login.)
