@@ -2,7 +2,6 @@
   (:require
    clojure.edn
    is.simm.views.main
-   #_electric-starter-app.main
    [hyperfiddle.electric3 :as e]
    #?(:cljs hyperfiddle.electric-client3)
    #?(:clj [is.simm.server-jetty :as jetty])
